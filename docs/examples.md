@@ -15,24 +15,31 @@ import hexacloud.infra.gateway.GatewayFactory;
 
 public class AppBootstrap {
     public static void main(String[] args) {
-        // 1. Build and configure the gateway listener ports
-        GatewayBuilderPort builder = GatewayFactory.createGateway("production-cluster")
+        // 1. Build and configure the gateway listener ports with explicit names
+        GatewayBuilderPort builder = GatewayFactory.createGateway("gateway-1", "production-cluster")
             .port(8080)
             .pingInterval(10)
             .enableHttp(true)
-            .enableTelnet(true);
+            .enableTelnet(true)
+            .enableTcpProxy(true); // Enables L4 TCP Proxy on base_port + 3 (8083)
 
-        // 2. Launch listeners and checks
+        // 2. Set routing mode on the cluster
+        builder.getCluster().setRoutingMode(Cluster.RoutingMode.HYBRID);
+
+        // 3. Register a named node
+        builder.registerNode("node-a", "http://localhost", 8081).register();
+
+        // 4. Launch listeners and checks explicitly
         RunningGatewayPort gateway = builder.listen().startPingScheduler();
 
-        // 3. Obtain the TUI control panel and lock permissions
+        // 5. Obtain the TUI control panel and lock permissions
         TerminalUiPort controlPanel = TerminalUiFactory.createTui("Hexacloud Admin Desk")
             .seedGateway(gateway)
             .readOnly(false)
             .nodeManagementEnabled(true)
             .gatewayManagementEnabled(true);
 
-        // 4. Run the interactive terminal interface
+        // 6. Run the interactive terminal interface
         controlPanel.start();
     }
 }

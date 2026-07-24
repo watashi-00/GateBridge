@@ -32,9 +32,9 @@ public class ClusterDetailViewRenderer {
         if (W < 110) W = 110;
         if (H < 24) H = 24;
 
-        mainRenderer.drawBox(2, 5, 29, 13, "POLICIES & LIMITS", false);
-        mainRenderer.drawBox(31, 5, W, 13, "SERVICES / TELEMETRY (" + state.nodes.size() + ")", true);
-        mainRenderer.drawBox(2, 14, W, H - 2, "CONSOLE LOGS FOR " + state.selectedClusterName, false);
+        mainRenderer.drawBox(2, 5, 29, 14, "POLICIES & LIMITS", false);
+        mainRenderer.drawBox(31, 5, W, 14, "SERVICES / TELEMETRY (" + state.nodes.size() + ")", true);
+        mainRenderer.drawBox(2, 15, W, H - 2, "CONSOLE LOGS FOR " + state.selectedClusterName, false);
 
         NativeTerminal.printAt(4, 6, WHITE_BOLD + "Active:   " + RESET + state.selectedClusterName);
         NativeTerminal.printAt(4, 7, "Security: " + (state.targetRequireToken ? GREEN + "Token Required" + RESET : YELLOW + "Optional" + RESET));
@@ -50,6 +50,8 @@ public class ClusterDetailViewRenderer {
         NativeTerminal.printAt(4, 10, "Limits:   " + YELLOW + state.targetRateLimitRequests + " reqs / " + state.targetRateLimitDurationSeconds + "s" + RESET);
         NativeTerminal.printAt(4, 11, "Timeout:  " + state.targetTimeoutMs + " ms");
         NativeTerminal.printAt(4, 12, "Ping Int: " + state.globalPingInterval + "s");
+        String routeMode = currentCluster != null ? currentCluster.getRoutingMode().name() : "N/A";
+        NativeTerminal.printAt(4, 13, "RouteMode:" + YELLOW + routeMode + RESET);
 
         int y = 6;
         int hostColWidth = (W - 31) - 6 - 12 - 4;
@@ -59,13 +61,13 @@ public class ClusterDetailViewRenderer {
         NativeTerminal.printAt(33, y, WHITE_BOLD + headerLine + RESET);
         y++;
 
-        tui.adjustServicesViewport(6);
+        tui.adjustServicesViewport(7);
 
         if (state.nodes.isEmpty()) {
             NativeTerminal.printAt(33, y, RED + "No services registered." + RESET);
             y++;
         } else {
-            for (int i = 0; i < 6; i++) {
+            for (int i = 0; i < 7; i++) {
                 int index = state.servicesViewportStart + i;
                 if (index >= state.nodes.size()) break;
 
@@ -91,16 +93,16 @@ public class ClusterDetailViewRenderer {
             if (state.servicesViewportStart > 0) {
                 NativeTerminal.printAt(W - 2, 7, WHITE_BOLD + "▲" + RESET);
             }
-            if (state.servicesViewportStart + 6 < state.nodes.size()) {
-                NativeTerminal.printAt(W - 2, 12, WHITE_BOLD + "▼" + RESET);
+            if (state.servicesViewportStart + 7 < state.nodes.size()) {
+                NativeTerminal.printAt(W - 2, 13, WHITE_BOLD + "▼" + RESET);
             }
         }
-        for (int r = y; r <= 12; r++) {
+        for (int r = y; r <= 13; r++) {
             NativeTerminal.printAt(33, r, StrUtils.repeat(" ", hostColWidth + 20));
         }
 
         // Inner console logs
-        int logsStartY = 15;
+        int logsStartY = 16;
         int logsEndY = H - 3;
         int logsLinesCount = logsEndY - logsStartY + 1;
         y = logsStartY;

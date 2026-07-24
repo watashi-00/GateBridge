@@ -5,6 +5,7 @@ package hexacloud.core.model;
  * Contains connection coordinates, status metadata, and health-check configurations.
  */
 public class ServerNode {
+    private final String name;
     private final String host;
     private final int port;
     private final NodeStatus status;
@@ -13,6 +14,8 @@ public class ServerNode {
     private final String pingPath;
     private final String pingHeaderName;
     private final String pingHeaderValue;
+    private final boolean isDynamic;
+    private final boolean telemetryOnly;
 
     private int latencyMs = 0;
     private double cpuUsage = 0.0;
@@ -20,10 +23,11 @@ public class ServerNode {
     private String runtime = "";
 
     /**
-     * Complete constructor to specify custom health check parameters.
+     * Primary constructor including node name, isDynamic, and telemetryOnly flags.
      */
-    public ServerNode(String host, int port, NodeStatus status, boolean isExternal,
-                      PingProtocol pingProtocol, String pingPath, String pingHeaderName, String pingHeaderValue) {
+    public ServerNode(String name, String host, int port, NodeStatus status, boolean isExternal,
+                      PingProtocol pingProtocol, String pingPath, String pingHeaderName, String pingHeaderValue, boolean isDynamic, boolean telemetryOnly) {
+        this.name = name != null && !name.isEmpty() ? name : (host + ":" + port);
         this.host = host;
         this.port = port;
         this.status = status;
@@ -32,6 +36,37 @@ public class ServerNode {
         this.pingPath = pingPath != null ? pingPath : "/";
         this.pingHeaderName = pingHeaderName;
         this.pingHeaderValue = pingHeaderValue;
+        this.isDynamic = isDynamic;
+        this.telemetryOnly = telemetryOnly;
+    }
+
+    /**
+     * Constructor including node name and isDynamic flag.
+     */
+    public ServerNode(String name, String host, int port, NodeStatus status, boolean isExternal,
+                      PingProtocol pingProtocol, String pingPath, String pingHeaderName, String pingHeaderValue, boolean isDynamic) {
+        this(name, host, port, status, isExternal, pingProtocol, pingPath, pingHeaderName, pingHeaderValue, isDynamic, false);
+    }
+
+    /**
+     * Legacy constructor including node name.
+     */
+    public ServerNode(String name, String host, int port, NodeStatus status, boolean isExternal,
+                      PingProtocol pingProtocol, String pingPath, String pingHeaderName, String pingHeaderValue) {
+        this(name, host, port, status, isExternal, pingProtocol, pingPath, pingHeaderName, pingHeaderValue, false);
+    }
+
+    /**
+     * Legacy constructor without node name parameter.
+     */
+    public ServerNode(String host, int port, NodeStatus status, boolean isExternal,
+                      PingProtocol pingProtocol, String pingPath, String pingHeaderName, String pingHeaderValue) {
+        this(host + ":" + port, host, port, status, isExternal, pingProtocol, pingPath, pingHeaderName, pingHeaderValue);
+    }
+
+    public ServerNode(String name, String host, int port, NodeStatus status, boolean isExternal,
+                      boolean pingEnabled, String pingPath, String pingHeaderName, String pingHeaderValue) {
+        this(name, host, port, status, isExternal, pingEnabled ? PingProtocol.HTTP : PingProtocol.NONE, pingPath, pingHeaderName, pingHeaderValue);
     }
 
     /**
@@ -39,14 +74,25 @@ public class ServerNode {
      */
     public ServerNode(String host, int port, NodeStatus status, boolean isExternal,
                       boolean pingEnabled, String pingPath, String pingHeaderName, String pingHeaderValue) {
-        this(host, port, status, isExternal, pingEnabled ? PingProtocol.HTTP : PingProtocol.NONE, pingPath, pingHeaderName, pingHeaderValue);
+        this(host + ":" + port, host, port, status, isExternal, pingEnabled ? PingProtocol.HTTP : PingProtocol.NONE, pingPath, pingHeaderName, pingHeaderValue);
+    }
+
+    public ServerNode(String name, String host, int port, NodeStatus status, boolean isExternal) {
+        this(name, host, port, status, isExternal, PingProtocol.HTTP, "/", null, null);
     }
 
     /**
      * Constructor for default health-check settings.
      */
     public ServerNode(String host, int port, NodeStatus status, boolean isExternal) {
-        this(host, port, status, isExternal, PingProtocol.HTTP, "/", null, null);
+        this(host + ":" + port, host, port, status, isExternal, PingProtocol.HTTP, "/", null, null);
+    }
+
+    /**
+     * Get the node name identifier.
+     */
+    public String name() {
+        return name;
     }
 
     /**
@@ -144,12 +190,30 @@ public class ServerNode {
         this.runtime = runtime;
     }
 
+    public boolean isDynamic() {
+        return isDynamic;
+    }
+
+    public boolean telemetryOnly() {
+        return telemetryOnly;
+    }
+
+    public ServerNode withDynamic(boolean isDynamic) {
+        ServerNode node = new ServerNode(this.name, this.host, this.port, this.status, this.isExternal,
+                this.pingProtocol, this.pingPath, this.pingHeaderName, this.pingHeaderValue, isDynamic, this.telemetryOnly);
+        node.setLatencyMs(this.latencyMs);
+        node.setCpuUsage(this.cpuUsage);
+        node.setRamUsage(this.ramUsage);
+        node.setRuntime(this.runtime);
+        return node;
+    }
+
     /**
      * Create a new immutable ServerNode instance with an updated status.
      */
     public ServerNode withStatus(NodeStatus newStatus) {
-        ServerNode node = new ServerNode(this.host, this.port, newStatus, this.isExternal,
-                this.pingProtocol, this.pingPath, this.pingHeaderName, this.pingHeaderValue);
+        ServerNode node = new ServerNode(this.name, this.host, this.port, newStatus, this.isExternal,
+                this.pingProtocol, this.pingPath, this.pingHeaderName, this.pingHeaderValue, this.isDynamic, this.telemetryOnly);
         node.setLatencyMs(this.latencyMs);
         node.setCpuUsage(this.cpuUsage);
         node.setRamUsage(this.ramUsage);
@@ -161,8 +225,8 @@ public class ServerNode {
      * Create a new immutable ServerNode instance with an updated ping protocol.
      */
     public ServerNode withPingProtocol(PingProtocol newProtocol) {
-        ServerNode node = new ServerNode(this.host, this.port, this.status, this.isExternal,
-                newProtocol, this.pingPath, this.pingHeaderName, this.pingHeaderValue);
+        ServerNode node = new ServerNode(this.name, this.host, this.port, this.status, this.isExternal,
+                newProtocol, this.pingPath, this.pingHeaderName, this.pingHeaderValue, this.isDynamic, this.telemetryOnly);
         node.setLatencyMs(this.latencyMs);
         node.setCpuUsage(this.cpuUsage);
         node.setRamUsage(this.ramUsage);

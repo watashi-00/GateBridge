@@ -18,6 +18,12 @@ import hexacloud.core.server.route.ClusterController;
 
 public class Cluster {
 
+    public enum RoutingMode {
+        TELEMETRY_ONLY,
+        LOAD_BALANCER_ONLY,
+        HYBRID
+    }
+
     private final ConcurrentHashMap<String, ServerNode> cluster;
     private final ClusterEventBusManager eventManager;
     private final ClusterSecurityManager securityManager;
@@ -28,6 +34,20 @@ public class Cluster {
     private String clusterUri = ClusterConfig.DEFAULT_CLUSTER_URI;
     private List<ServerNode> tempCluster;
     private boolean batchMode = false;
+    private volatile RoutingMode routingMode = RoutingMode.TELEMETRY_ONLY;
+
+    private final java.util.Set<String> staticNodes = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    private final java.util.Set<String> persistedStaticNodes = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    private final java.util.Set<String> registeredStaticNodesThisRun = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    private boolean bootstrapMode = true;
+
+    public java.util.Set<String> getStaticNodes() {
+        return staticNodes;
+    }
+
+    public java.util.Set<String> getPersistedStaticNodes() {
+        return persistedStaticNodes;
+    }
 
     public Cluster() {
         this(ClusterConfig.DEFAULT_CLUSTER_NAME, null);
@@ -45,6 +65,14 @@ public class Cluster {
         this.routeRegistry = new RouteRegistry();
         this.routeRegistry.registerController(new ClusterController(this));
         ClusterRegistry.getInstance().registerCluster(this);
+    }
+
+    public RoutingMode getRoutingMode() {
+        return routingMode;
+    }
+
+    public void setRoutingMode(RoutingMode routingMode) {
+        this.routingMode = routingMode;
     }
 
     public RouteRegistry getRouteRegistry() {
@@ -66,11 +94,75 @@ public class Cluster {
             String host = validHost(node.host());
             if (host == null) return;
 
+            String fullHost = host + ":" + node.port();
+            if (bootstrapMode) {
+                registeredStaticNodesThisRun.add(fullHost);
+                staticNodes.add(fullHost);
+                
+                // If a state file was loaded, respect remote deletions of static nodes
+                if (hexacloud.core.config.ClusterStatePersistence.isStateLoaded()) {
+                    if (persistedStaticNodes.contains(fullHost) && !cluster.containsKey(fullHost)) {
+                        return; // Ignore/Respect remote deletion
+                    }
+                }
+            } else {
+                // Dynamically registered at runtime
+                node = node.withDynamic(true);
+            }
+
             ServerNode validNode = new ServerNode(
-                host, node.port(), node.status(), node.isExternal(),
-                node.pingProtocol(), node.pingPath(), node.pingHeaderName(), node.pingHeaderValue()
+                node.name(), host, node.port(), node.status(), node.isExternal(),
+                node.pingProtocol(), node.pingPath(), node.pingHeaderName(), node.pingHeaderValue(), node.isDynamic(), node.telemetryOnly()
             );
             addClusterNode(validNode);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    public void registerLoadedServer(ServerNode node) {
+        lock.lock();
+        try {
+            if (node == null) return;
+            String host = validHost(node.host());
+            if (host == null) return;
+
+            String fullHost = host + ":" + node.port();
+            if (!node.isDynamic()) {
+                staticNodes.add(fullHost);
+                persistedStaticNodes.add(fullHost);
+            }
+
+            ServerNode validNode = new ServerNode(
+                node.name(), host, node.port(), node.status(), node.isExternal(),
+                node.pingProtocol(), node.pingPath(), node.pingHeaderName(), node.pingHeaderValue(), node.isDynamic(), node.telemetryOnly()
+            );
+            addClusterNode(validNode);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    public void endBootstrapPhase() {
+        lock.lock();
+        try {
+            this.bootstrapMode = false;
+            if (hexacloud.core.config.ClusterStatePersistence.isStateLoaded()) {
+                java.util.List<String> toPrune = new java.util.ArrayList<>();
+                for (String fullHost : persistedStaticNodes) {
+                    if (!registeredStaticNodesThisRun.contains(fullHost)) {
+                        toPrune.add(fullHost);
+                    }
+                }
+                for (String fullHost : toPrune) {
+                    cluster.remove(fullHost);
+                    staticNodes.remove(fullHost);
+                    persistedStaticNodes.remove(fullHost);
+                }
+                if (!toPrune.isEmpty()) {
+                    hexacloud.core.config.ClusterStatePersistence.saveState();
+                }
+            }
         } finally {
             lock.unlock();
         }

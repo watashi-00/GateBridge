@@ -36,7 +36,7 @@ public class NodeConfigViewRenderer {
         if (H < 24) H = 24;
 
         // Top half: configuration parameters
-        mainRenderer.drawBox(2, 5, W, 13, "NODE CONFIGURATION PANEL - " + node.getFullHost(), true);
+        mainRenderer.drawBox(2, 5, W, 14, "NODE CONFIGURATION PANEL - " + node.getFullHost(), true);
 
         NativeTerminal.printAt(4, 6, WHITE_BOLD + "Host:   " + RESET + node.host());
         NativeTerminal.printAt(4, 7, WHITE_BOLD + "Port:   " + RESET + node.port());
@@ -70,11 +70,12 @@ public class NodeConfigViewRenderer {
         String headerVal = node.pingHeaderValue() == null ? "None" : node.pingHeaderValue();
         NativeTerminal.printAt(4, 11, (canEdit ? WHITE_BOLD + "[H] " : "") + "Header: " + RESET + CYAN + headerName + RESET);
         NativeTerminal.printAt(4, 12, (canEdit ? WHITE_BOLD + "[V] " : "") + "Token:  " + RESET + CYAN + headerVal + RESET);
+        NativeTerminal.printAt(4, 13, "Mutability: " + (node.isDynamic() ? YELLOW + "DYNAMIC" : GREEN + "STATIC") + RESET);
 
         // Sep & Right half: Live Telemetry
         int xSep = W / 2;
         int xTele = xSep + 2;
-        for (int row = 6; row <= 12; row++) {
+        for (int row = 6; row <= 13; row++) {
             NativeTerminal.printAt(xSep, row, "│");
         }
         NativeTerminal.printAt(xTele, 6, WHITE_BOLD + "Live Telemetry Metrics:" + RESET);
@@ -91,9 +92,9 @@ public class NodeConfigViewRenderer {
         NativeTerminal.printAt(xTele, 10, "RAM Memory:   " + CYAN + ramStr + RESET);
 
         // Bottom half: console logs for this node/service
-        mainRenderer.drawBox(2, 14, W, H - 2, "CONSOLE LOGS FOR SERVICE " + node.getFullHost(), false);
+        mainRenderer.drawBox(2, 15, W, H - 2, "CONSOLE LOGS FOR SERVICE " + node.getFullHost(), false);
 
-        int logsStartY = 15;
+        int logsStartY = 16;
         int logsEndY = H - 3;
         int logsLinesCount = logsEndY - logsStartY + 1;
         int y = logsStartY;

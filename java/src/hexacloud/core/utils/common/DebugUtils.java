@@ -161,46 +161,70 @@ public class DebugUtils {
         return result;
     }
 
+    private static hexacloud.core.ports.LogAdapterPort activeLogAdapter = new hexacloud.core.ports.LogAdapterPort() {
+        @Override
+        public void log(LogLevel level, String clusterName, String serviceHost, String message, Throwable t) {
+            LogEntry entry = new LogEntry(level, clusterName, serviceHost, message);
+            recentLogs.offer(entry);
+            while (recentLogs.size() > 1000) {
+                recentLogs.poll();
+            }
+            if (!tuiModeActive) {
+                if (level == LogLevel.ERROR) {
+                    if (t != null) {
+                        logger.error(message, t);
+                    } else {
+                        logger.error(message);
+                    }
+                } else if (level == LogLevel.WARN) {
+                    if (t != null) {
+                        logger.warn(message, t);
+                    } else {
+                        logger.warn(message);
+                    }
+                } else if (level == LogLevel.DEBUG) {
+                    if (t != null) {
+                        logger.debug(message, t);
+                    } else {
+                        logger.debug(message);
+                    }
+                } else {
+                    if (t != null) {
+                        logger.info(message, t);
+                    } else {
+                        logger.info(message);
+                    }
+                }
+            }
+            if (logListener != null) {
+                logListener.onLogAdded();
+            }
+        }
+    };
+
+    /**
+     * Override/set the active log adapter (Inversion of Control).
+     * Enables redirection of all internal logs to enterprise handlers.
+     */
+    public static void setLogAdapter(hexacloud.core.ports.LogAdapterPort adapter) {
+        if (adapter != null) {
+            activeLogAdapter = adapter;
+        }
+    }
+
+    /**
+     * Gets the active log adapter.
+     */
+    public static hexacloud.core.ports.LogAdapterPort getLogAdapter() {
+        return activeLogAdapter;
+    }
+
     private static void captureLog(LogLevel level, String clusterName, String serviceHost, String message) {
         captureLog(level, clusterName, serviceHost, message, null);
     }
 
     private static void captureLog(LogLevel level, String clusterName, String serviceHost, String message, Throwable t) {
-        LogEntry entry = new LogEntry(level, clusterName, serviceHost, message);
-        recentLogs.offer(entry);
-        while (recentLogs.size() > 1000) {
-            recentLogs.poll();
-        }
-        if (!tuiModeActive) {
-            if (level == LogLevel.ERROR) {
-                if (t != null) {
-                    logger.error(message, t);
-                } else {
-                    logger.error(message);
-                }
-            } else if (level == LogLevel.WARN) {
-                if (t != null) {
-                    logger.warn(message, t);
-                } else {
-                    logger.warn(message);
-                }
-            } else if (level == LogLevel.DEBUG) {
-                if (t != null) {
-                    logger.debug(message, t);
-                } else {
-                    logger.debug(message);
-                }
-            } else {
-                if (t != null) {
-                    logger.info(message, t);
-                } else {
-                    logger.info(message);
-                }
-            }
-        }
-        if (logListener != null) {
-            logListener.onLogAdded();
-        }
+        activeLogAdapter.log(level, clusterName, serviceHost, message, t);
     }
 
     public static void log(String message) {

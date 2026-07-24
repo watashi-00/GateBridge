@@ -442,6 +442,7 @@ public class TerminalUI implements hexacloud.core.ports.TerminalUiPort {
                 cfg.telnetEnabled = activeGw.isTelnetEnabled();
                 cfg.httpEnabled = activeGw.isHttpEnabled();
                 cfg.wsEnabled = activeGw.isWsEnabled();
+                cfg.tcpProxyEnabled = activeGw.isTcpProxyEnabled();
                 cfg.running = activeGw.isRunning();
                 gatewayPorts.put(clusterName, activeGw.getPort());
             } else {

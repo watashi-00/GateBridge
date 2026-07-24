@@ -82,5 +82,6 @@ public interface RunningGatewayPort {
     boolean isTelnetEnabled();
     boolean isHttpEnabled();
     boolean isWsEnabled();
+    boolean isTcpProxyEnabled();
     boolean isRunning();
 }

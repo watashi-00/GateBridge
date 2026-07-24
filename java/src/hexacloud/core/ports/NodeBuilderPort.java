@@ -3,6 +3,11 @@ package hexacloud.core.ports;
 public interface NodeBuilderPort {
     
     /**
+     * Set the custom name of the node.
+     */
+    NodeBuilderPort name(String name);
+
+    /**
      * Set whether the scheduler should ping this node.
      */
     NodeBuilderPort pingEnabled(boolean enabled);
@@ -22,6 +27,11 @@ public interface NodeBuilderPort {
      */
     NodeBuilderPort external(boolean external);
     
+    /**
+     * Set whether this node is telemetry-only (ignored for load-balancing).
+     */
+    NodeBuilderPort telemetryOnly(boolean value);
+
     /**
      * Register the node in the cluster and return the parent GatewayBuilderPort for fluent chaining.
      */

@@ -118,7 +118,7 @@ public class NativeTerminal {
         return false;
     }
 
-    public static void initTerminal() {
+    public static synchronized void initTerminal() {
         if (loaded) {
             try {
                 initTerminal0();
@@ -142,7 +142,7 @@ public class NativeTerminal {
         }
     }
 
-    public static void resetTerminal() {
+    public static synchronized void resetTerminal() {
         if (loaded) {
             try {
                 resetTerminal0();
@@ -164,7 +164,7 @@ public class NativeTerminal {
         }
     }
 
-    public static void clearScreen() {
+    public static synchronized void clearScreen() {
         if (loaded) {
             try {
                 clearScreen0();
@@ -178,7 +178,7 @@ public class NativeTerminal {
         System.out.flush();
     }
 
-    public static void printAt(int x, int y, String text) {
+    public static synchronized void printAt(int x, int y, String text) {
         if (loaded) {
             try {
                 printAt0(x, y, text);
@@ -192,7 +192,7 @@ public class NativeTerminal {
         System.out.flush();
     }
 
-    public static int readKey() {
+    public static synchronized int readKey() {
         if (loaded) {
             try {
                 return readKey0();
@@ -201,27 +201,48 @@ public class NativeTerminal {
             }
         }
         try {
-            if (System.in.available() > 0) {
-                int c = System.in.read();
-                if (c == 27) { // Escape sequence parser for fallback mode
-                    // Wait up to 50ms for the next bytes of the escape sequence to arrive
-                    long start = System.currentTimeMillis();
-                    while (System.in.available() == 0 && (System.currentTimeMillis() - start) < 50) {
-                        ThreadManager.spinWait();
+            if (sttyRawModeActive) {
+                if (System.in.available() > 0) {
+                    int c = System.in.read();
+                    if (c == 27) { // Escape sequence parser for fallback mode
+                        // Wait up to 50ms for the next bytes of the escape sequence to arrive
+                        long start = System.currentTimeMillis();
+                        while (System.in.available() == 0 && (System.currentTimeMillis() - start) < 50) {
+                            ThreadManager.spinWait();
+                        }
+                        if (System.in.available() > 0) {
+                            int c2 = System.in.read();
+                            if (c2 == '[') {
+                                start = System.currentTimeMillis();
+                                while (System.in.available() == 0 && (System.currentTimeMillis() - start) < 50) {
+                                    ThreadManager.spinWait();
+                                }
+                                if (System.in.available() > 0) {
+                                    int c3 = System.in.read();
+                                    if (c3 == 'A') return 1000; // UP Arrow
+                                    if (c3 == 'B') return 1001; // DOWN Arrow
+                                    if (c3 == 'C') return 1002; // RIGHT Arrow
+                                    if (c3 == 'D') return 1003; // LEFT Arrow
+                                }
+                            }
+                        }
                     }
+                    return c;
+                }
+            } else {
+                // In canonical/cooked mode (waiting for TUI toggle), perform a blocking read
+                int c = System.in.read();
+                if (c == 27) {
+                    // Escape sequence check (if any)
                     if (System.in.available() > 0) {
                         int c2 = System.in.read();
                         if (c2 == '[') {
-                            start = System.currentTimeMillis();
-                            while (System.in.available() == 0 && (System.currentTimeMillis() - start) < 50) {
-                                ThreadManager.spinWait();
-                            }
                             if (System.in.available() > 0) {
                                 int c3 = System.in.read();
-                                if (c3 == 'A') return 1000; // UP Arrow
-                                if (c3 == 'B') return 1001; // DOWN Arrow
-                                if (c3 == 'C') return 1002; // RIGHT Arrow
-                                if (c3 == 'D') return 1003; // LEFT Arrow
+                                if (c3 == 'A') return 1000;
+                                if (c3 == 'B') return 1001;
+                                if (c3 == 'C') return 1002;
+                                if (c3 == 'D') return 1003;
                             }
                         }
                     }
@@ -234,7 +255,7 @@ public class NativeTerminal {
         return -1;
     }
 
-    public static boolean saveConfig(String filepath, String content) {
+    public static synchronized boolean saveConfig(String filepath, String content) {
         if (loaded) {
             try {
                 return saveConfig0(filepath, content);
@@ -254,17 +275,17 @@ public class NativeTerminal {
     private static int cachedHeight = 24;
     private static long lastSizeCheck = 0;
 
-    public static int getTerminalWidth() {
+    public static synchronized int getTerminalWidth() {
         updateTerminalSize();
-        return cachedWidth;
+        return Math.max(20, cachedWidth);
     }
 
-    public static int getTerminalHeight() {
+    public static synchronized int getTerminalHeight() {
         updateTerminalSize();
-        return cachedHeight;
+        return Math.max(5, cachedHeight);
     }
 
-    private static synchronized void updateTerminalSize() {
+    private static void updateTerminalSize() {
         long now = System.currentTimeMillis();
         if (now - lastSizeCheck < 200) {
             return;

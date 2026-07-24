@@ -9,6 +9,7 @@ public class NodeBuilder implements NodeBuilderPort {
 
     private final hexacloud.core.ports.GatewayBuilderPort parent;
     private final Cluster cluster;
+    private String name;
     private final String host;
     private final int port;
     private boolean pingEnabled = true;
@@ -16,12 +17,24 @@ public class NodeBuilder implements NodeBuilderPort {
     private String pingHeaderName = null;
     private String pingHeaderValue = null;
     private boolean isExternal = false;
+    private boolean telemetryOnly = false;
 
     public NodeBuilder(hexacloud.core.ports.GatewayBuilderPort parent, Cluster cluster, String host, int port) {
+        this(parent, cluster, null, host, port);
+    }
+
+    public NodeBuilder(hexacloud.core.ports.GatewayBuilderPort parent, Cluster cluster, String name, String host, int port) {
         this.parent = parent;
         this.cluster = cluster;
+        this.name = name;
         this.host = host;
         this.port = port;
+    }
+
+    @Override
+    public NodeBuilderPort name(String name) {
+        this.name = name;
+        return this;
     }
 
     @Override
@@ -50,14 +63,18 @@ public class NodeBuilder implements NodeBuilderPort {
     }
 
     @Override
+    public NodeBuilderPort telemetryOnly(boolean value) {
+        this.telemetryOnly = value;
+        return this;
+    }
+
+    @Override
     public hexacloud.core.ports.GatewayBuilderPort register() {
         ServerNode node = new ServerNode(
-            host, port, NodeStatus.OFFLINE, isExternal,
-            pingEnabled, pingPath, pingHeaderName, pingHeaderValue
+            name, host, port, NodeStatus.OFFLINE, isExternal,
+            pingEnabled ? hexacloud.core.model.PingProtocol.HTTP : hexacloud.core.model.PingProtocol.NONE,
+            pingPath, pingHeaderName, pingHeaderValue, false, telemetryOnly
         );
-        if (hexacloud.core.config.ClusterStatePersistence.isStateLoaded()) {
-            return parent;
-        }
         cluster.registerServer(node);
         return parent;
     }

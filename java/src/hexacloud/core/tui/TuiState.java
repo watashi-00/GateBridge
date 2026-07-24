@@ -46,6 +46,7 @@ public class TuiState {
         public boolean telnetEnabled = true;
         public boolean httpEnabled = true;
         public boolean wsEnabled = true;
+        public boolean tcpProxyEnabled = false;
         public boolean running = false;
     }
     public final List<GatewayConfig> gateways = new ArrayList<>();

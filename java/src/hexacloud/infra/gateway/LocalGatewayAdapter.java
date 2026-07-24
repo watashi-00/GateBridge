@@ -1,5 +1,11 @@
 package hexacloud.infra.gateway;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+
 import hexacloud.core.cluster.Cluster;
 import hexacloud.core.cluster.ClusterManager;
 import hexacloud.core.cluster.event.ClusterEventBusManager;
@@ -13,61 +19,63 @@ import hexacloud.infra.network.ThreadPingScheduler;
 import hexacloud.core.utils.common.DebugUtils;
 import hexacloud.core.config.ClusterStatePersistence;
 import hexacloud.core.cluster.ClusterRegistry;
+import hexacloud.core.server.route.RouteRule;
 
 class LocalGatewayAdapter implements GatewayBuilderPort, RunningGatewayPort {
 
-    private final ClusterManager clusterManager;
+    private final Map<String, ClusterManager> clusterManagers = new ConcurrentHashMap<>();
     private final ClusterEventBusManager clusterEventManager;
     private final ThreadPingScheduler schedulerPing;
+    private String activeClusterName;
     private ServerManager serverManager;
     private int port = 3000;
     private boolean running = false;
     private String gatewayName;
+    private boolean tcpProxyEnabled = false;
+    private hexacloud.core.server.HttpEngine httpEngine = hexacloud.core.server.HttpEngine.JDK_DEFAULT;
+    private hexacloud.core.server.PerformanceProfile performanceProfile = hexacloud.core.server.PerformanceProfile.STANDARD;
+    private hexacloud.core.ports.SslContextPort sslContextPort;
 
-    public LocalGatewayAdapter(String clusterName) {
-        DebugUtils.log("Creating LocalGatewayAdapter for cluster: " + clusterName);
+    public LocalGatewayAdapter(String gatewayName) {
+        DebugUtils.log("Creating LocalGatewayAdapter for gateway: " + gatewayName);
         this.clusterEventManager = new ClusterEventBusManager();
         autoRegisterEventListeners();
         
         // Load configurations state from file on startup
         ClusterStatePersistence.loadState();
-        
-        Cluster cluster = ClusterRegistry.getInstance().getCluster(clusterName);
-        if (cluster == null) {
-            cluster = new Cluster(clusterName, this.clusterEventManager);
-        }
-        
-        this.clusterManager = new ClusterManager(cluster, this.clusterEventManager);
-        this.schedulerPing = new ThreadPingScheduler(clusterName, this.clusterEventManager);
+        this.gatewayName = gatewayName;
+        this.schedulerPing = new ThreadPingScheduler(gatewayName, this.clusterEventManager);
     }
 
-    public LocalGatewayAdapter(String clusterName, int port) {
-        DebugUtils.log("Creating LocalGatewayAdapter for cluster: " + clusterName + " with pre-configured server port " + port);
-        this.clusterEventManager = new ClusterEventBusManager();
-        autoRegisterEventListeners();
-        
-        // Load configurations state from file on startup
-        ClusterStatePersistence.loadState();
-        
-        Cluster cluster = ClusterRegistry.getInstance().getCluster(clusterName);
-        if (cluster == null) {
-            cluster = new Cluster(clusterName, this.clusterEventManager);
-        }
-        
-        this.clusterManager = new ClusterManager(cluster, this.clusterEventManager);
-        this.schedulerPing = new ThreadPingScheduler(clusterName, this.clusterEventManager);
+    public LocalGatewayAdapter(String gatewayName, int port) {
+        this(gatewayName);
         this.port = port;
-        this.serverManager = new ServerManager(port, this.clusterManager.getCluster(), this.clusterEventManager);
+    }
+
+    public LocalGatewayAdapter(String gatewayName, String initialClusterName) {
+        this(gatewayName);
+        createCluster(initialClusterName);
     }
 
     @Override
     public NodeBuilderPort registerNode(String host, int port) {
-        return new NodeBuilder(this, this.clusterManager.getCluster(), host, port);
+        return new NodeBuilder(this, requireActiveCluster(), host, port);
+    }
+
+    @Override
+    public NodeBuilderPort registerNode(String name, String host, int port) {
+        return new NodeBuilder(this, requireActiveCluster(), name, host, port);
     }
 
     @Override
     public LocalGatewayAdapter port(int port) {
         this.port = port;
+        return this;
+    }
+
+    @Override
+    public LocalGatewayAdapter sslContext(hexacloud.core.ports.SslContextPort sslContextPort) {
+        this.sslContextPort = sslContextPort;
         return this;
     }
 
@@ -79,71 +87,66 @@ class LocalGatewayAdapter implements GatewayBuilderPort, RunningGatewayPort {
 
     @Override
     public LocalGatewayAdapter startPingScheduler() {
-        schedulerPing.startPingScheduler(() -> this.clusterManager.getClusterList());
+        schedulerPing.startPingScheduler(() -> this.getClusters().stream()
+                .flatMap(cluster -> cluster.getCluster().stream())
+                .collect(java.util.stream.Collectors.toList()));
         return this;
     }
     
     @Override
     public LocalGatewayAdapter startPingScheduler(int intervalInSeconds) {
         schedulerPing.setInterval(intervalInSeconds);
-        schedulerPing.startPingScheduler(() -> this.clusterManager.getClusterList());
+        schedulerPing.startPingScheduler(() -> this.getClusters().stream()
+                .flatMap(cluster -> cluster.getCluster().stream())
+                .collect(java.util.stream.Collectors.toList()));
         return this;
     }
     
 	@Override
 	public LocalGatewayAdapter registerAllServers() {
-        clusterManager.registerAllServers();
+        requireActiveClusterManager().registerAllServers();
         return this;
 	}
 
     @Override
     public LocalGatewayAdapter registerServer(int port) {
-        if (ClusterStatePersistence.isStateLoaded()) {
-            return this;
-        }
-        clusterManager.registerServer(port);
+        requireActiveClusterManager().registerServer(port);
         return this;
     }
 
     @Override
     public LocalGatewayAdapter registerServer(int port, NodeStatus status) {
-        if (ClusterStatePersistence.isStateLoaded()) {
-            return this;
-        }
-        clusterManager.registerServer(port, status);
+        requireActiveClusterManager().registerServer(port, status);
         return this;
     }
 
     @Override
     public LocalGatewayAdapter registerServer(ServerNode node) {
-        if (ClusterStatePersistence.isStateLoaded()) {
-            return this;
-        }
-        clusterManager.registerServer(node);
+        requireActiveClusterManager().registerServer(node);
         return this;
     }
 
 	@Override
 	public LocalGatewayAdapter deregisterAllServers() {
-        clusterManager.deregisterAllServers();
+        requireActiveClusterManager().deregisterAllServers();
         return this;
 	}
 
 	@Override
 	public LocalGatewayAdapter deregisterServer(String fullHost) {
-        clusterManager.deregisterServer(fullHost);
+        requireActiveClusterManager().deregisterServer(fullHost);
         return this;
 	}
 
 	@Override
 	public LocalGatewayAdapter deregisterLastServer() {
-        clusterManager.deregisterLastServer();
+        requireActiveClusterManager().deregisterLastServer();
         return this;
 	}
 
 	@Override
 	public LocalGatewayAdapter listClusterNodes() {
-        clusterManager.listClusterNodes();
+        requireActiveClusterManager().listClusterNodes();
         return this;
 	}
 
@@ -161,7 +164,10 @@ class LocalGatewayAdapter implements GatewayBuilderPort, RunningGatewayPort {
 
     private void ensureServerManagerInitialized() {
         if(this.serverManager == null) {
-            this.serverManager = new ServerManager(this.clusterManager.getCluster(), this.clusterEventManager);
+            this.serverManager = new ServerManager(getCluster(), this.clusterEventManager);
+            this.serverManager.setHttpEngine(this.httpEngine);
+            this.serverManager.setPerformanceProfile(this.performanceProfile);
+            this.serverManager.enableTcpProxy(this.tcpProxyEnabled);
         }
     }
 
@@ -207,9 +213,24 @@ class LocalGatewayAdapter implements GatewayBuilderPort, RunningGatewayPort {
     public LocalGatewayAdapter listen(int port) {
         this.port = port;
         ensureServerManagerInitialized();
+        this.serverManager.setSslContext(this.sslContextPort);
+        for (Cluster cluster : getClusters()) {
+            cluster.endBootstrapPhase(); // Transition clusters to runtime
+        }
         DebugUtils.log("LocalGatewayAdapter: Starting server listeners on port " + port);
         this.serverManager.listen(port);
         this.running = true;
+
+        System.out.println("=================================================");
+        System.out.println("GATEBRIDGE NODE STARTED: " + getGatewayName());
+        System.out.println("Admin Port: " + getPort());
+        System.out.println("Transports: HTTP=" + isHttpEnabled() + ", WS=" + isWsEnabled() + ", Telnet=" + isTelnetEnabled() + ", TCP Proxy=" + this.serverManager.isTcpProxyEnabled());
+        System.out.println("Active Clusters:");
+        for (Cluster cluster : getClusters()) {
+            System.out.println("   - Cluster: " + cluster.getClusterName() + " | RoutingMode: " + cluster.getRoutingMode() + " | Nodes: " + cluster.getCluster().size());
+        }
+        System.out.println("=================================================");
+
         return this;
     }
 
@@ -231,7 +252,8 @@ class LocalGatewayAdapter implements GatewayBuilderPort, RunningGatewayPort {
 
     @Override
     public String getClusterName() {
-        return this.clusterManager.getCluster().getClusterName();
+        Cluster cluster = getCluster();
+        return cluster != null ? cluster.getClusterName() : null;
     }
 
     @Override
@@ -252,27 +274,121 @@ class LocalGatewayAdapter implements GatewayBuilderPort, RunningGatewayPort {
     }
 
     @Override
+    public LocalGatewayAdapter createCluster(String clusterName) {
+        if (clusterName == null || clusterName.trim().isEmpty()) {
+            throw new IllegalArgumentException("clusterName must not be empty");
+        }
+        String name = clusterName.trim();
+        Cluster cluster = ClusterRegistry.getInstance().getCluster(name);
+        if (cluster == null) {
+            cluster = new Cluster(name, this.clusterEventManager);
+        }
+        final Cluster selectedCluster = cluster;
+        this.clusterManagers.computeIfAbsent(name, ignored -> new ClusterManager(selectedCluster, this.clusterEventManager));
+        this.activeClusterName = name;
+        if (this.serverManager == null) {
+            ensureServerManagerInitialized();
+        }
+        return this;
+    }
+
+    @Override
+    public LocalGatewayAdapter useCluster(String clusterName) {
+        Cluster cluster = clusterName != null ? ClusterRegistry.getInstance().getCluster(clusterName) : null;
+        if (cluster == null) {
+            throw new IllegalArgumentException("Unknown cluster: " + clusterName);
+        }
+        this.clusterManagers.computeIfAbsent(cluster.getClusterName(), ignored -> new ClusterManager(cluster, this.clusterEventManager));
+        this.activeClusterName = cluster.getClusterName();
+        return this;
+    }
+
+    @Override
+    public Cluster getCluster(String clusterName) {
+        if (clusterName == null) {
+            return null;
+        }
+        ClusterManager manager = this.clusterManagers.get(clusterName);
+        return manager != null ? manager.getCluster() : null;
+    }
+
+    @Override
+    public List<Cluster> getClusters() {
+        List<Cluster> clusters = new ArrayList<>();
+        for (ClusterManager manager : this.clusterManagers.values()) {
+            clusters.add(manager.getCluster());
+        }
+        return Collections.unmodifiableList(clusters);
+    }
+
+    @Override
+    public LocalGatewayAdapter routeHost(String host, String pathPattern, String clusterName) {
+        return routeHost(host, pathPattern, clusterName, null);
+    }
+
+    @Override
+    public LocalGatewayAdapter routeHost(String host, String pathPattern, String clusterName, String targetPath) {
+        ensureServerManagerInitialized();
+        this.serverManager.addRouteRule(new RouteRule(host, pathPattern, clusterName, targetPath));
+        Cluster targetCluster = ClusterRegistry.getInstance().getCluster(clusterName);
+        if (targetCluster != null && targetCluster.getRoutingMode() == Cluster.RoutingMode.TELEMETRY_ONLY) {
+            targetCluster.setRoutingMode(Cluster.RoutingMode.HYBRID);
+        }
+        return this;
+    }
+
+    @Override
+    public LocalGatewayAdapter registerFilter(hexacloud.core.server.filter.HttpFilter filter) {
+        ensureServerManagerInitialized();
+        this.serverManager.registerFilter(filter);
+        return this;
+    }
+
+    @Override
     public LocalGatewayAdapter rateLimit(int requests, int durationSeconds) {
-        this.clusterManager.getCluster().setRateLimit(requests, durationSeconds);
+        requireActiveCluster().setRateLimit(requests, durationSeconds);
         return this;
     }
 
     @Override
     public LocalGatewayAdapter requireToken(boolean requireToken, String secret) {
-        this.clusterManager.getCluster().setRequireToken(requireToken);
-        this.clusterManager.getCluster().setSecret(secret);
+        Cluster cluster = requireActiveCluster();
+        cluster.setRequireToken(requireToken);
+        cluster.setSecret(secret);
         return this;
     }
 
     @Override
     public LocalGatewayAdapter allowedIps(String allowedIps) {
-        this.clusterManager.getCluster().setAllowedIps(allowedIps);
+        requireActiveCluster().setAllowedIps(allowedIps);
         return this;
     }
 
     @Override
     public LocalGatewayAdapter timeout(int timeoutMs) {
-        this.clusterManager.getCluster().setTimeoutMs(timeoutMs);
+        requireActiveCluster().setTimeoutMs(timeoutMs);
+        return this;
+    }
+
+    @Override
+    public LocalGatewayAdapter httpEngine(hexacloud.core.server.HttpEngine engine) {
+        if (engine != null) {
+            this.httpEngine = engine;
+            if (this.serverManager != null) {
+                this.serverManager.setHttpEngine(engine);
+            }
+        }
+        return this;
+    }
+
+    @Override
+    public LocalGatewayAdapter performanceProfile(hexacloud.core.server.PerformanceProfile profile) {
+        if (profile != null) {
+            this.performanceProfile = profile;
+            if (this.serverManager != null) {
+                this.serverManager.setPerformanceProfile(profile);
+            }
+        }
         return this;
     }
 
@@ -292,6 +408,11 @@ class LocalGatewayAdapter implements GatewayBuilderPort, RunningGatewayPort {
     }
 
     @Override
+    public boolean isTcpProxyEnabled() {
+        return serverManager != null && serverManager.isTcpProxyEnabled();
+    }
+
+    @Override
     public boolean isRunning() {
         return running;
     }
@@ -305,5 +426,34 @@ class LocalGatewayAdapter implements GatewayBuilderPort, RunningGatewayPort {
     @Override
     public String getGatewayName() {
         return this.gatewayName != null ? this.gatewayName : "gw-" + port;
+    }
+
+    @Override
+    public Cluster getCluster() {
+        if (this.activeClusterName == null) {
+            return null;
+        }
+        return ClusterRegistry.getInstance().getCluster(this.activeClusterName);
+    }
+
+    @Override
+    public LocalGatewayAdapter enableTcpProxy(boolean enabled) {
+        this.tcpProxyEnabled = enabled;
+        ensureServerManagerInitialized();
+        this.serverManager.enableTcpProxy(enabled);
+        return this;
+    }
+
+    private Cluster requireActiveCluster() {
+        Cluster cluster = getCluster();
+        if (cluster == null) {
+            throw new IllegalStateException("No active cluster. Call createCluster(name) or useCluster(name) before configuring cluster nodes or policies.");
+        }
+        return cluster;
+    }
+
+    private ClusterManager requireActiveClusterManager() {
+        Cluster cluster = requireActiveCluster();
+        return this.clusterManagers.computeIfAbsent(cluster.getClusterName(), ignored -> new ClusterManager(cluster, this.clusterEventManager));
     }
 }

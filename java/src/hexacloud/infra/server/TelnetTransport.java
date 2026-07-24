@@ -8,6 +8,8 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.concurrent.ExecutorService;
 import java.util.function.BiConsumer;
+import java.util.List;
+import hexacloud.core.server.filter.HttpFilter;
 
 import hexacloud.core.server.ServerTransport;
 import hexacloud.core.server.route.RouteRegistry;
@@ -26,7 +28,7 @@ public class TelnetTransport implements ServerTransport {
     private final ExecutorService threadPool = ThreadManager.newVirtualThreadPool();
 
     @Override
-    public void listen(int port, RouteRegistry registry, hexacloud.core.cluster.Cluster cluster) {
+    public void listen(int port, RouteRegistry registry, hexacloud.core.cluster.Cluster cluster, List<HttpFilter> customFilters) {
         new Thread(() -> serverListen(port, registry, cluster), "TelnetServer-Listener-" + port).start();
     }
 

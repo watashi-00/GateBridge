@@ -11,13 +11,14 @@ public class TerminalMain {
     public static void main(String[] args) {
         DebugUtils.setDebugEnabled(false);
         
-        GatewayBuilderPort builder = GatewayFactory.createGateway("watashi-00")
-            .gatewayName("main-gw")
+        GatewayBuilderPort builder = GatewayFactory.createGateway("main-gw")
+            .createCluster("watashi-00")
             .port(3000)
             .pingInterval(5)
             .enableTelnet(true)
             .enableHttp(true)
-            .enableWs(true);
+            .enableWs(true)
+            .registerFilter(new Main.CustomAppLoggingFilter());
 
         builder.registerServer(3001, NodeStatus.OFFLINE)
             .registerServer(3002, NodeStatus.OFFLINE)

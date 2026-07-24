@@ -30,6 +30,8 @@ import hexacloud.core.utils.common.DebugUtils;
 import hexacloud.core.utils.json.JsonSerializer;
 import hexacloud.core.utils.common.StrUtils;
 import hexacloud.core.utils.concurrent.ThreadManager;
+import hexacloud.core.server.filter.HttpFilter;
+import java.util.List;
 
 /**
  * WebSocket event stream transport for cluster events in Java 8.
@@ -45,7 +47,7 @@ public class WsTransport implements ServerTransport {
     private volatile boolean running = false;
 
     @Override
-    public void listen(int port, RouteRegistry registry, hexacloud.core.cluster.Cluster cluster) {
+    public void listen(int port, RouteRegistry registry, hexacloud.core.cluster.Cluster cluster, List<HttpFilter> customFilters) {
         threadPool.execute(() -> serverListen(port));
     }
 
