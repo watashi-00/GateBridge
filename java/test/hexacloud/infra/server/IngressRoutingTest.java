@@ -248,6 +248,37 @@ public class IngressRoutingTest {
     }
 
     @Test
+    public void testIngressRouteRuleBypassesTelemetryOnlyBlockUndertowTransport() throws Exception {
+        int echoPort = findFreePort();
+        HttpServer echoBackend = HttpServer.create(new InetSocketAddress(echoPort), 0);
+        echoBackend.createContext("/", exchange -> {
+            byte[] resp = "routed".getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, resp.length);
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(resp);
+            }
+        });
+        echoBackend.start();
+
+        try {
+            Cluster routeOnlyCluster = new Cluster("route-rule-telemetry-only-cluster");
+            routeOnlyCluster.setRequireToken(false);
+            routeOnlyCluster.setRoutingMode(Cluster.RoutingMode.TELEMETRY_ONLY);
+            routeOnlyCluster.registerServer(new ServerNode("route-node", "http://localhost", echoPort, NodeStatus.ONLINE, false));
+
+            RouteRegistry registry = new RouteRegistry();
+            registry.addRouteRule(new RouteRule("localhost", "/auth/**", "route-rule-telemetry-only-cluster"));
+
+            undertowTransport = new UndertowHttpTransport();
+            undertowTransport.listen(gatewayPort2, registry, testCluster, Collections.emptyList());
+
+            assertEquals("routed", sendGetBody("http://localhost:" + gatewayPort2 + "/auth/a"));
+        } finally {
+            echoBackend.stop(0);
+        }
+    }
+
+    @Test
     public void testIngressRuleRoutingUndertowTransport() throws Exception {
         RouteRegistry registry = new RouteRegistry();
         registry.addRouteRule(new RouteRule("127.0.0.1", "/app/**", "ingress-test-cluster"));

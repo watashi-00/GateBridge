@@ -28,8 +28,8 @@ public class Main {
     public void start() {
         DebugUtils.setDebugEnabled(true);
         
-        GatewayBuilderPort builder = GatewayFactory.createGateway("watashi-cluster")
-            .gatewayName("gateway-1")
+        GatewayBuilderPort builder = GatewayFactory.createGateway("gateway-1")
+            .createCluster("watashi-cluster")
             .port(3000)
             .pingInterval(5)
             .enableTelnet(true)

@@ -61,15 +61,17 @@ public class UndertowHttpTransport implements ServerTransport {
 
     private void rebuildFilters(Cluster cluster, List<HttpFilter> customFilters) {
         activeFilters.clear();
-        String allowedIps = cluster.getAllowedIps();
-        if (allowedIps != null && !allowedIps.trim().isEmpty()) {
-            activeFilters.add(new IpRestrictionFilter(cluster));
-        }
-        if (cluster.getRateLimitRequests() > 0 && cluster.getRateLimitDurationSeconds() > 0) {
-            activeFilters.add(new RateLimitFilter(cluster));
-        }
-        if (cluster.isRequireToken()) {
-            activeFilters.add(new TokenAuthFilter(cluster));
+        if (cluster != null) {
+            String allowedIps = cluster.getAllowedIps();
+            if (allowedIps != null && !allowedIps.trim().isEmpty()) {
+                activeFilters.add(new IpRestrictionFilter(cluster));
+            }
+            if (cluster.getRateLimitRequests() > 0 && cluster.getRateLimitDurationSeconds() > 0) {
+                activeFilters.add(new RateLimitFilter(cluster));
+            }
+            if (cluster.isRequireToken()) {
+                activeFilters.add(new TokenAuthFilter(cluster));
+            }
         }
         activeFilters.addAll(customFilters);
 
@@ -260,6 +262,7 @@ public class UndertowHttpTransport implements ServerTransport {
 
                      String targetClusterName = null;
                      String clusterSubpath = null;
+                     boolean matchedRouteRule = false;
 
                      if (matchingPath.startsWith("/clusters/")) {
                          String pathWithoutClusters = matchingPath.substring("/clusters/".length());
@@ -288,6 +291,7 @@ public class UndertowHttpTransport implements ServerTransport {
                              if (matchedRule != null) {
                                  targetClusterName = matchedRule.getClusterName();
                                  clusterSubpath = matchedRule.rewritePath(matchingPath);
+                                 matchedRouteRule = true;
                              }
                          }
                      }
@@ -325,7 +329,7 @@ public class UndertowHttpTransport implements ServerTransport {
                          }
 
                          // Layer 7 Reverse Proxy Load Balancing
-                         if (targetCluster.getRoutingMode() == Cluster.RoutingMode.TELEMETRY_ONLY) {
+                         if (!matchedRouteRule && targetCluster.getRoutingMode() == Cluster.RoutingMode.TELEMETRY_ONLY) {
                              s.setStatus(403);
                              try (PrintWriter out = s.getWriter()) {
                                  out.print("403 Forbidden - Load balancing is disabled for cluster: " + targetClusterName);

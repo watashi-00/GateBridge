@@ -48,7 +48,7 @@ public class StateOrchestrationTest {
     @Test
     public void testRemoteDeletionAndBootstrapPersistence() {
         // 1. Initial run: bootstrap registers two static nodes A & B
-        GatewayBuilderPort builder = GatewayFactory.createGateway(clusterName);
+        GatewayBuilderPort builder = GatewayFactory.createGateway("test-orchestration-gateway").createCluster(clusterName);
         builder.registerServer(new ServerNode("node-a", "http://localhost", 7001, NodeStatus.OFFLINE, false));
         builder.registerServer(new ServerNode("node-b", "http://localhost", 7002, NodeStatus.OFFLINE, false));
         
@@ -66,7 +66,7 @@ public class StateOrchestrationTest {
         gateway.stop();
         
         // 3. Restart: Reload state from disk and run bootstrap code registering A & B again
-        GatewayBuilderPort restartedBuilder = GatewayFactory.createGateway(clusterName);
+        GatewayBuilderPort restartedBuilder = GatewayFactory.createGateway("test-orchestration-gateway").createCluster(clusterName);
         // Bootstrap tries to register A & B again
         restartedBuilder.registerServer(new ServerNode("node-a", "http://localhost", 7001, NodeStatus.OFFLINE, false));
         restartedBuilder.registerServer(new ServerNode("node-b", "http://localhost", 7002, NodeStatus.OFFLINE, false));
@@ -85,14 +85,14 @@ public class StateOrchestrationTest {
     @Test
     public void testCodeDeletionPruning() {
         // 1. Initial run: bootstrap registers static nodes A & B
-        GatewayBuilderPort builder = GatewayFactory.createGateway(clusterName);
+        GatewayBuilderPort builder = GatewayFactory.createGateway("test-orchestration-gateway").createCluster(clusterName);
         builder.registerServer(new ServerNode("node-a", "http://localhost", 7001, NodeStatus.OFFLINE, false));
         builder.registerServer(new ServerNode("node-b", "http://localhost", 7002, NodeStatus.OFFLINE, false));
         RunningGatewayPort gateway = builder.listen(7000);
         gateway.stop();
 
         // 2. Developer removes A from Main.java (bootstrap code)
-        GatewayBuilderPort restartedBuilder = GatewayFactory.createGateway(clusterName);
+        GatewayBuilderPort restartedBuilder = GatewayFactory.createGateway("test-orchestration-gateway").createCluster(clusterName);
         // Only B is registered by code this time
         restartedBuilder.registerServer(new ServerNode("node-b", "http://localhost", 7002, NodeStatus.OFFLINE, false));
         RunningGatewayPort restartedGateway = restartedBuilder.listen(7000);

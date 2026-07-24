@@ -40,7 +40,9 @@ public class ServerManager implements ServerOperations {
         this.cluster = cluster;
         this.eventManager = eventManager;
         this.routeRegistry = new RouteRegistry();
-        this.routeRegistry.registerController(new ClusterController(cluster));
+        if (cluster != null) {
+            this.routeRegistry.registerController(new ClusterController(cluster));
+        }
         autoRegisterControllers();
     }
 
@@ -55,9 +57,11 @@ public class ServerManager implements ServerOperations {
                 try {
                     hexacloud.core.server.route.RouteController controller = null;
                     try {
-                        java.lang.reflect.Constructor<?> ctor = clazz.getDeclaredConstructor(Cluster.class);
-                        ctor.setAccessible(true);
-                        controller = (hexacloud.core.server.route.RouteController) ctor.newInstance(cluster);
+                        if (cluster != null) {
+                            java.lang.reflect.Constructor<?> ctor = clazz.getDeclaredConstructor(Cluster.class);
+                            ctor.setAccessible(true);
+                            controller = (hexacloud.core.server.route.RouteController) ctor.newInstance(cluster);
+                        }
                     } catch (NoSuchMethodException e) {
                         java.lang.reflect.Constructor<?> ctor = clazz.getDeclaredConstructor();
                         ctor.setAccessible(true);
