@@ -75,6 +75,11 @@ public interface GatewayBuilderPort {
     GatewayBuilderPort routeHost(String host, String pathPattern, String clusterName);
 
     /**
+     * Map a virtual host and path pattern to a target cluster with a backend path rewrite.
+     */
+    GatewayBuilderPort routeHost(String host, String pathPattern, String clusterName, String targetPath);
+
+    /**
      * Register a custom HTTP filter to intercept incoming HTTP traffic.
      */
     GatewayBuilderPort registerFilter(hexacloud.core.server.filter.HttpFilter filter);

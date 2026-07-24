@@ -125,22 +125,29 @@ public class HttpTransport implements ServerTransport {
                         
                         RouteHandlerInfo fastRouteInfo = null;
                         boolean isProxy = false;
+
                         if (fastMatchingPath.startsWith("/clusters/")) {
                             isProxy = true;
                         } else if (registry.getRouteRulesList() != null && !registry.getRouteRulesList().isEmpty()) {
-                            fastRouteInfo = routeCache.computeIfAbsent(fastMatchingPath, path -> {
-                                String routeName = path.length() > 1 ? path.substring(1).toUpperCase() : "GET_NODES";
-                                BiConsumer<String, PrintWriter> handler = registry.getRoutes().get(routeName);
-                                return new RouteHandlerInfo(handler, routeName);
-                            });
-                            isProxy = fastRouteInfo.handler == null;
+                            String requestHost = exchange.getRequestHeaders().getFirst("Host");
+                            RouteRule matchedRule = null;
+                            List<RouteRule> rules = registry.getRouteRulesList();
+                            if (rules != null) {
+                                for (RouteRule rule : rules) {
+                                    if (rule.matches(requestHost, fastMatchingPath)) {
+                                        matchedRule = rule;
+                                        break;
+                                    }
+                                }
+                            }
+                            isProxy = (matchedRule != null);
                         }
  
                         // Fast-path for direct custom routes when no filters are active
                         if (!isProxy && activeFilters.isEmpty()) {
                             if (fastRouteInfo == null) {
                                 fastRouteInfo = routeCache.computeIfAbsent(fastMatchingPath, path -> {
-                                    String routeName = path.length() > 1 ? path.substring(1).toUpperCase() : "GET_NODES";
+                                    String routeName = toRouteName(path);
                                     BiConsumer<String, PrintWriter> handler = registry.getRoutes().get(routeName);
                                     return new RouteHandlerInfo(handler, routeName);
                                 });
@@ -191,7 +198,7 @@ public class HttpTransport implements ServerTransport {
                                         clusterSubpath = "/";
                                     }
                                 } else {
-                                    String routeName = matchingPath.length() > 1 ? matchingPath.substring(1).toUpperCase() : "GET_NODES";
+                                    String routeName = toRouteName(matchingPath);
                                     if (!registry.getRoutes().containsKey(routeName)) {
                                         String requestHost = r.getHeader("Host");
                                         RouteRule matchedRule = null;
@@ -206,7 +213,7 @@ public class HttpTransport implements ServerTransport {
                                         }
                                         if (matchedRule != null) {
                                             targetClusterName = matchedRule.getClusterName();
-                                            clusterSubpath = matchingPath;
+                                            clusterSubpath = matchedRule.rewritePath(matchingPath);
                                         }
                                     }
                                 }
@@ -387,7 +394,7 @@ public class HttpTransport implements ServerTransport {
                                 } else {
                                     final String finalLookupPath = matchingPath;
                                     RouteHandlerInfo routeInfo = routeCache.computeIfAbsent(finalLookupPath, path -> {
-                                        String routeName = path.length() > 1 ? path.substring(1).toUpperCase() : "GET_NODES";
+                                        String routeName = toRouteName(path);
                                         BiConsumer<String, PrintWriter> handler = registry.getRoutes().get(routeName);
                                         return new RouteHandlerInfo(handler, routeName);
                                     });
@@ -409,7 +416,7 @@ public class HttpTransport implements ServerTransport {
                                     } else {
                                         s.setStatus(404);
                                         try (PrintWriter out = s.getWriter()) {
-                                            out.print("404 Not Found - Unknown Route: " + routeInfo.routeName);
+                                            out.print("404 Not Found - Unknown Route: " + matchingPath);
                                         }
                                     }
                                 }
@@ -466,6 +473,13 @@ public class HttpTransport implements ServerTransport {
             }
         }
         return null;
+    }
+
+    private static String toRouteName(String path) {
+        if (path == null || path.equals("/") || path.isEmpty()) {
+            return "/";
+        }
+        return path.startsWith("/") ? path.substring(1).toUpperCase() : path.toUpperCase();
     }
 
     @Override

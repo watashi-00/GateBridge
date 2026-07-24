@@ -245,7 +245,12 @@ public class ServerManager implements ServerOperations {
     }
 
     public void addRouteRule(RouteRule rule) {
+        DebugUtils.info("new route rule: " + rule);
+        if (rule == null) {
+            return;
+        }
         this.routeRules.add(rule);
+        this.routeRegistry.addRouteRule(rule);
     }
 
     public List<RouteRule> getRouteRules() {

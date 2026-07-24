@@ -276,8 +276,17 @@ class LocalGatewayAdapter implements GatewayBuilderPort, RunningGatewayPort {
 
     @Override
     public LocalGatewayAdapter routeHost(String host, String pathPattern, String clusterName) {
+        return routeHost(host, pathPattern, clusterName, null);
+    }
+
+    @Override
+    public LocalGatewayAdapter routeHost(String host, String pathPattern, String clusterName, String targetPath) {
         ensureServerManagerInitialized();
-        this.serverManager.addRouteRule(new RouteRule(host, pathPattern, clusterName));
+        this.serverManager.addRouteRule(new RouteRule(host, pathPattern, clusterName, targetPath));
+        Cluster targetCluster = ClusterRegistry.getInstance().getCluster(clusterName);
+        if (targetCluster != null && targetCluster.getRoutingMode() == Cluster.RoutingMode.TELEMETRY_ONLY) {
+            targetCluster.setRoutingMode(Cluster.RoutingMode.HYBRID);
+        }
         return this;
     }
 
