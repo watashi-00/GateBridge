@@ -5,6 +5,7 @@ package hexacloud.core.model;
  * Contains connection coordinates, status metadata, and health-check configurations.
  */
 public class ServerNode {
+    private final String id;
     private final String name;
     private final String host;
     private final int port;
@@ -38,6 +39,7 @@ public class ServerNode {
         this.pingHeaderValue = pingHeaderValue;
         this.isDynamic = isDynamic;
         this.telemetryOnly = telemetryOnly;
+        this.id = name;
     }
 
     /**
@@ -247,6 +249,10 @@ public class ServerNode {
     public String getHostWithoutProtocol() {
         if (host == null) return "";
         return host.replaceAll("^[a-zA-Z]+://", "");
+    }
+
+    public String getId() {
+        return id;
     }
 
     @Override

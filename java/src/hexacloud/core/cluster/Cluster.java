@@ -245,15 +245,15 @@ public class Cluster {
             lock.unlock();
         }
     }
-
-    public void updateStatusServer(String host, NodeStatus status) {
+    // this method ok
+    public void updateStatusServer(String id, NodeStatus status) {
         lock.lock();
         try {
-            if (!this.cluster.containsKey(host)) {
-                DebugUtils.error(this.clusterName, host, "Cannot update status: Server host '" + host + "' is not registered in the cluster.");
+            if (!this.cluster.containsKey(id)) {
+                DebugUtils.error(this.clusterName, id, "Cannot update status: Server host '" + id + "' is not registered in the cluster.");
                 return;
             }
-            this.cluster.computeIfPresent(host, (key, serverNode) -> serverNode.withStatus(status));
+            this.cluster.computeIfPresent(id, (key, serverNode) -> serverNode.withStatus(status));
         } finally {
             lock.unlock();
         }
@@ -284,7 +284,7 @@ public class Cluster {
             if (!batchMode) {
                 ClusterStatePersistence.saveState();
             }
-            return new NodeUpdateResult(updated.getFullHost(), updated.pingProtocol().getFriendlyName(), statusChanged, telemetryUpdated);
+            return new NodeUpdateResult(updated.getFullHost(), updated.pingProtocol().getFriendlyName(), statusChanged, telemetryUpdated, current.getId());
         } finally {
             lock.unlock();
         }
