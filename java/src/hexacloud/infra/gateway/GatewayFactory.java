@@ -9,23 +9,34 @@ import hexacloud.core.ports.GatewayBuilderPort;
 public class GatewayFactory {
     
     /**
-     * Create a GateBridge Gateway instance for the specified cluster.
+     * Create a GateBridge Gateway instance with the specified gateway name.
      *
-     * @param clusterName the unique name of the cluster.
+     * @param gatewayName the unique name of the gateway.
      * @return the GatewayBuilderPort implementation instance.
      */
-    public static GatewayBuilderPort createGateway(String clusterName) {
-        return new LocalGatewayAdapter(clusterName);
+    public static GatewayBuilderPort createGateway(String gatewayName) {
+        return new LocalGatewayAdapter(gatewayName);
+    }
+
+    /**
+     * Create a GateBridge Gateway instance and an initial active cluster.
+     *
+     * @param gatewayName the unique name of the gateway.
+     * @param clusterName the initial cluster to create/select.
+     * @return the GatewayBuilderPort implementation instance.
+     */
+    public static GatewayBuilderPort createGateway(String gatewayName, String clusterName) {
+        return new LocalGatewayAdapter(gatewayName, clusterName);
     }
 
     /**
      * Create a GateBridge Gateway instance listening on a pre-configured Telnet port.
      *
-     * @param clusterName the unique name of the cluster.
+     * @param gatewayName the unique name of the gateway.
      * @param port the Telnet server listening port.
      * @return the GatewayBuilderPort implementation instance.
      */
-    public static GatewayBuilderPort createGateway(String clusterName, int port) {
-        return new LocalGatewayAdapter(clusterName, port);
+    public static GatewayBuilderPort createGateway(String gatewayName, int port) {
+        return new LocalGatewayAdapter(gatewayName, port);
     }    
 }

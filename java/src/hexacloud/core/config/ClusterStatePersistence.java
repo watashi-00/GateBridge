@@ -1,6 +1,5 @@
 package hexacloud.core.config;
 
-import hexacloud.core.cluster.Cluster;
 import hexacloud.core.ports.ClusterPersistencePort;
 
 /**

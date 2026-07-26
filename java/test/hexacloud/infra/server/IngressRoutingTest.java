@@ -9,6 +9,7 @@ import hexacloud.core.server.route.RouteRegistry;
 import hexacloud.core.server.route.RouteRule;
 import hexacloud.core.server.route.RouteController;
 import hexacloud.core.server.route.RouteMapping;
+import hexacloud.core.server.route.ClusterController;
 import java.io.PrintWriter;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -111,6 +112,16 @@ public class IngressRoutingTest {
         }
     }
 
+    private String sendGetBody(String urlStr) throws Exception {
+        URL url = URI.create(urlStr).toURL();
+        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+        conn.setRequestMethod("GET");
+        assertEquals(200, conn.getResponseCode());
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8))) {
+            return reader.lines().collect(Collectors.joining("\n"));
+        }
+    }
+
     @Test
     public void testV1PrefixPeelingAndNodeFilterJdkTransport() throws Exception {
         RouteRegistry registry = new RouteRegistry();
@@ -148,6 +159,123 @@ public class IngressRoutingTest {
             body = reader.lines().collect(Collectors.joining("\n"));
         }
         assertEquals("Backend 1", body);
+    }
+
+    @Test
+    public void testIngressRuleRoutingWithLocalhostHostAndAuthPatternJdkTransport() throws Exception {
+        RouteRegistry registry = new RouteRegistry();
+        registry.addRouteRule(new RouteRule("localhost", "/auth/**", "ingress-test-cluster"));
+
+        jdkTransport = new HttpTransport();
+        jdkTransport.listen(gatewayPort1, registry, testCluster, Collections.emptyList());
+
+        URL url = URI.create("http://localhost:" + gatewayPort1 + "/auth/a").toURL();
+        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+        conn.setRequestMethod("GET");
+
+        assertEquals(200, conn.getResponseCode());
+        String body;
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8))) {
+            body = reader.lines().collect(Collectors.joining("\n"));
+        }
+        assertEquals("Backend 1", body);
+    }
+
+    @Test
+    public void testIngressRuleRewritesBackendPathJdkTransport() throws Exception {
+        int echoPort = findFreePort();
+        HttpServer echoBackend = HttpServer.create(new InetSocketAddress(echoPort), 0);
+        echoBackend.createContext("/", exchange -> {
+            byte[] resp = exchange.getRequestURI().getPath().getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, resp.length);
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(resp);
+            }
+        });
+        echoBackend.start();
+
+        try {
+            Cluster rewriteCluster = new Cluster("rewrite-test-cluster");
+            rewriteCluster.setRequireToken(false);
+            rewriteCluster.setRoutingMode(Cluster.RoutingMode.HYBRID);
+            rewriteCluster.registerServer(new ServerNode("rewrite-node", "http://localhost", echoPort, NodeStatus.ONLINE, false));
+
+            RouteRegistry registry = new RouteRegistry();
+            registry.addRouteRule(new RouteRule("localhost", "/auth/**", "rewrite-test-cluster"));
+            registry.addRouteRule(new RouteRule("localhost", "/gateway/**", "rewrite-test-cluster", "/api"));
+
+            jdkTransport = new HttpTransport();
+            jdkTransport.listen(gatewayPort1, registry, testCluster, Collections.emptyList());
+
+            assertEquals("/", sendGetBody("http://localhost:" + gatewayPort1 + "/auth/a"));
+            assertEquals("/api/a", sendGetBody("http://localhost:" + gatewayPort1 + "/gateway/a"));
+        } finally {
+            echoBackend.stop(0);
+        }
+    }
+
+    @Test
+    public void testIngressRuleRewritesBackendPathUndertowTransport() throws Exception {
+        int echoPort = findFreePort();
+        HttpServer echoBackend = HttpServer.create(new InetSocketAddress(echoPort), 0);
+        echoBackend.createContext("/", exchange -> {
+            byte[] resp = exchange.getRequestURI().getPath().getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, resp.length);
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(resp);
+            }
+        });
+        echoBackend.start();
+
+        try {
+            Cluster rewriteCluster = new Cluster("rewrite-test-cluster-undertow");
+            rewriteCluster.setRequireToken(false);
+            rewriteCluster.setRoutingMode(Cluster.RoutingMode.HYBRID);
+            rewriteCluster.registerServer(new ServerNode("rewrite-node", "http://localhost", echoPort, NodeStatus.ONLINE, false));
+
+            RouteRegistry registry = new RouteRegistry();
+            registry.addRouteRule(new RouteRule("localhost", "/auth/**", "rewrite-test-cluster-undertow"));
+            registry.addRouteRule(new RouteRule("localhost", "/gateway/**", "rewrite-test-cluster-undertow", "/api"));
+
+            undertowTransport = new UndertowHttpTransport();
+            undertowTransport.listen(gatewayPort2, registry, testCluster, Collections.emptyList());
+
+            assertEquals("/", sendGetBody("http://localhost:" + gatewayPort2 + "/auth/a"));
+            assertEquals("/api/a", sendGetBody("http://localhost:" + gatewayPort2 + "/gateway/a"));
+        } finally {
+            echoBackend.stop(0);
+        }
+    }
+
+    @Test
+    public void testIngressRouteRuleBypassesTelemetryOnlyBlockUndertowTransport() throws Exception {
+        int echoPort = findFreePort();
+        HttpServer echoBackend = HttpServer.create(new InetSocketAddress(echoPort), 0);
+        echoBackend.createContext("/", exchange -> {
+            byte[] resp = "routed".getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, resp.length);
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(resp);
+            }
+        });
+        echoBackend.start();
+
+        try {
+            Cluster routeOnlyCluster = new Cluster("route-rule-telemetry-only-cluster");
+            routeOnlyCluster.setRequireToken(false);
+            routeOnlyCluster.setRoutingMode(Cluster.RoutingMode.TELEMETRY_ONLY);
+            routeOnlyCluster.registerServer(new ServerNode("route-node", "http://localhost", echoPort, NodeStatus.ONLINE, false));
+
+            RouteRegistry registry = new RouteRegistry();
+            registry.addRouteRule(new RouteRule("localhost", "/auth/**", "route-rule-telemetry-only-cluster"));
+
+            undertowTransport = new UndertowHttpTransport();
+            undertowTransport.listen(gatewayPort2, registry, testCluster, Collections.emptyList());
+
+            assertEquals("routed", sendGetBody("http://localhost:" + gatewayPort2 + "/auth/a"));
+        } finally {
+            echoBackend.stop(0);
+        }
     }
 
     @Test
@@ -234,6 +362,58 @@ public class IngressRoutingTest {
             body = reader.lines().collect(Collectors.joining("\n"));
         }
         assertEquals("LOCAL RESPONSE", body);
+    }
+
+    @Test
+    public void testRootDoesNotExposeGetNodesJdkTransport() throws Exception {
+        RouteRegistry registry = new RouteRegistry();
+        registry.registerController(new ClusterController(testCluster));
+
+        jdkTransport = new HttpTransport();
+        jdkTransport.listen(gatewayPort1, registry, testCluster, Collections.emptyList());
+
+        URL rootUrl = URI.create("http://127.0.0.1:" + gatewayPort1 + "/").toURL();
+        HttpURLConnection rootConn = (HttpURLConnection) rootUrl.openConnection();
+        rootConn.setRequestMethod("GET");
+
+        assertEquals(404, rootConn.getResponseCode());
+        String rootBody;
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(rootConn.getErrorStream(), StandardCharsets.UTF_8))) {
+            rootBody = reader.lines().collect(Collectors.joining("\n"));
+        }
+        assertEquals("404 Not Found - Unknown Route: /", rootBody);
+
+        URL explicitUrl = URI.create("http://127.0.0.1:" + gatewayPort1 + "/get_nodes").toURL();
+        HttpURLConnection explicitConn = (HttpURLConnection) explicitUrl.openConnection();
+        explicitConn.setRequestMethod("GET");
+
+        assertEquals(200, explicitConn.getResponseCode());
+    }
+
+    @Test
+    public void testRootDoesNotExposeGetNodesUndertowTransport() throws Exception {
+        RouteRegistry registry = new RouteRegistry();
+        registry.registerController(new ClusterController(testCluster));
+
+        undertowTransport = new UndertowHttpTransport();
+        undertowTransport.listen(gatewayPort2, registry, testCluster, Collections.emptyList());
+
+        URL rootUrl = URI.create("http://127.0.0.1:" + gatewayPort2 + "/").toURL();
+        HttpURLConnection rootConn = (HttpURLConnection) rootUrl.openConnection();
+        rootConn.setRequestMethod("GET");
+
+        assertEquals(404, rootConn.getResponseCode());
+        String rootBody;
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(rootConn.getErrorStream(), StandardCharsets.UTF_8))) {
+            rootBody = reader.lines().collect(Collectors.joining("\n"));
+        }
+        assertEquals("404 Not Found - Unknown Route: /", rootBody);
+
+        URL explicitUrl = URI.create("http://127.0.0.1:" + gatewayPort2 + "/get_nodes").toURL();
+        HttpURLConnection explicitConn = (HttpURLConnection) explicitUrl.openConnection();
+        explicitConn.setRequestMethod("GET");
+
+        assertEquals(200, explicitConn.getResponseCode());
     }
 
     @Test

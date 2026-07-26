@@ -1,5 +1,8 @@
 package hexacloud.core.ports;
 
+import java.util.List;
+
+import hexacloud.core.cluster.Cluster;
 import hexacloud.core.model.NodeStatus;
 import hexacloud.core.model.ServerNode;
 
@@ -65,6 +68,26 @@ public interface GatewayBuilderPort {
     GatewayBuilderPort registerAllServers();
 
     /**
+     * Create or reuse a cluster and make it the active cluster for node registration.
+     */
+    GatewayBuilderPort createCluster(String clusterName);
+
+    /**
+     * Select an existing cluster as the active cluster for node registration.
+     */
+    GatewayBuilderPort useCluster(String clusterName);
+
+    /**
+     * Get a cluster by name, or null when it does not exist.
+     */
+    Cluster getCluster(String clusterName);
+
+    /**
+     * Get all clusters currently known by this gateway process.
+     */
+    List<Cluster> getClusters();
+
+    /**
      * Register a custom route controller to expose additional business command endpoints.
      */
     GatewayBuilderPort registerController(hexacloud.core.server.route.RouteController controller);
@@ -73,6 +96,11 @@ public interface GatewayBuilderPort {
      * Map a virtual host and path pattern directly to a target cluster.
      */
     GatewayBuilderPort routeHost(String host, String pathPattern, String clusterName);
+
+    /**
+     * Map a virtual host and path pattern to a target cluster with a backend path rewrite.
+     */
+    GatewayBuilderPort routeHost(String host, String pathPattern, String clusterName, String targetPath);
 
     /**
      * Register a custom HTTP filter to intercept incoming HTTP traffic.
@@ -129,10 +157,15 @@ public interface GatewayBuilderPort {
     /**
      * Get the cluster model instance managed by this gateway.
      */
-    hexacloud.core.cluster.Cluster getCluster();
+    Cluster getCluster();
 
     /**
      * Enable or disable Layer 4 TCP proxy load balancing.
      */
     GatewayBuilderPort enableTcpProxy(boolean enabled);
+
+    /**
+     * Configure an SSL/TLS context provider for HTTPS/TLS termination.
+     */
+    GatewayBuilderPort sslContext(hexacloud.core.ports.SslContextPort sslContextPort);
 }

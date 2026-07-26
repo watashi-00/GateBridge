@@ -8,7 +8,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.PrintWriter;
-import java.net.InetSocketAddress;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -57,18 +56,21 @@ public class HttpTransport implements ServerTransport {
 
     private hexacloud.core.server.PerformanceProfile performanceProfile = hexacloud.core.server.PerformanceProfile.STANDARD;
     private final List<HttpFilter> activeFilters = new CopyOnWriteArrayList<>();
+    private hexacloud.core.ports.SslContextPort sslContextPort;
 
     private void rebuildFilters(Cluster cluster, List<HttpFilter> customFilters) {
         activeFilters.clear();
-        String allowedIps = cluster.getAllowedIps();
-        if (allowedIps != null && !allowedIps.trim().isEmpty()) {
-            activeFilters.add(new IpRestrictionFilter(cluster));
-        }
-        if (cluster.getRateLimitRequests() > 0 && cluster.getRateLimitDurationSeconds() > 0) {
-            activeFilters.add(new RateLimitFilter(cluster));
-        }
-        if (cluster.isRequireToken()) {
-            activeFilters.add(new TokenAuthFilter(cluster));
+        if (cluster != null) {
+            String allowedIps = cluster.getAllowedIps();
+            if (allowedIps != null && !allowedIps.trim().isEmpty()) {
+                activeFilters.add(new IpRestrictionFilter(cluster));
+            }
+            if (cluster.getRateLimitRequests() > 0 && cluster.getRateLimitDurationSeconds() > 0) {
+                activeFilters.add(new RateLimitFilter(cluster));
+            }
+            if (cluster.isRequireToken()) {
+                activeFilters.add(new TokenAuthFilter(cluster));
+            }
         }
         activeFilters.addAll(customFilters);
 
@@ -87,12 +89,24 @@ public class HttpTransport implements ServerTransport {
         }
     }
 
+    public void setSslContext(hexacloud.core.ports.SslContextPort sslContextPort) {
+        this.sslContextPort = sslContextPort;
+    }
+
     @Override
     public void listen(int port, RouteRegistry registry, Cluster cluster, List<HttpFilter> customFilters) {
         try {
             rebuildFilters(cluster, customFilters);
             DebugUtils.log("HTTP Transport (JDK) starting on port " + port + " with profile: " + performanceProfile);
-            server = HttpServer.create(new InetSocketAddress(port), 2048);
+            if (sslContextPort != null && sslContextPort.isSslEnabled()) {
+                com.sun.net.httpserver.HttpsServer httpsServer = com.sun.net.httpserver.HttpsServer.create(
+                    new java.net.InetSocketAddress(port), 2048
+                );
+                httpsServer.setHttpsConfigurator(new com.sun.net.httpserver.HttpsConfigurator(sslContextPort.getSslContext()));
+                server = httpsServer;
+            } else {
+                server = com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress(port), 2048);
+            }
             server.setExecutor(ThreadManager.newVirtualThreadPool());
             server.createContext("/", new HttpHandler() {
                 @Override
@@ -113,22 +127,29 @@ public class HttpTransport implements ServerTransport {
                         
                         RouteHandlerInfo fastRouteInfo = null;
                         boolean isProxy = false;
+
                         if (fastMatchingPath.startsWith("/clusters/")) {
                             isProxy = true;
                         } else if (registry.getRouteRulesList() != null && !registry.getRouteRulesList().isEmpty()) {
-                            fastRouteInfo = routeCache.computeIfAbsent(fastMatchingPath, path -> {
-                                String routeName = path.length() > 1 ? path.substring(1).toUpperCase() : "GET_NODES";
-                                BiConsumer<String, PrintWriter> handler = registry.getRoutes().get(routeName);
-                                return new RouteHandlerInfo(handler, routeName);
-                            });
-                            isProxy = fastRouteInfo.handler == null;
+                            String requestHost = exchange.getRequestHeaders().getFirst("Host");
+                            RouteRule matchedRule = null;
+                            List<RouteRule> rules = registry.getRouteRulesList();
+                            if (rules != null) {
+                                for (RouteRule rule : rules) {
+                                    if (rule.matches(requestHost, fastMatchingPath)) {
+                                        matchedRule = rule;
+                                        break;
+                                    }
+                                }
+                            }
+                            isProxy = (matchedRule != null);
                         }
  
                         // Fast-path for direct custom routes when no filters are active
                         if (!isProxy && activeFilters.isEmpty()) {
                             if (fastRouteInfo == null) {
                                 fastRouteInfo = routeCache.computeIfAbsent(fastMatchingPath, path -> {
-                                    String routeName = path.length() > 1 ? path.substring(1).toUpperCase() : "GET_NODES";
+                                    String routeName = toRouteName(path);
                                     BiConsumer<String, PrintWriter> handler = registry.getRoutes().get(routeName);
                                     return new RouteHandlerInfo(handler, routeName);
                                 });
@@ -167,6 +188,7 @@ public class HttpTransport implements ServerTransport {
 
                                 String targetClusterName = null;
                                 String clusterSubpath = null;
+                                boolean matchedRouteRule = false;
 
                                 if (matchingPath.startsWith("/clusters/")) {
                                     String pathWithoutClusters = matchingPath.substring("/clusters/".length());
@@ -179,7 +201,7 @@ public class HttpTransport implements ServerTransport {
                                         clusterSubpath = "/";
                                     }
                                 } else {
-                                    String routeName = matchingPath.length() > 1 ? matchingPath.substring(1).toUpperCase() : "GET_NODES";
+                                    String routeName = toRouteName(matchingPath);
                                     if (!registry.getRoutes().containsKey(routeName)) {
                                         String requestHost = r.getHeader("Host");
                                         RouteRule matchedRule = null;
@@ -194,7 +216,8 @@ public class HttpTransport implements ServerTransport {
                                         }
                                         if (matchedRule != null) {
                                             targetClusterName = matchedRule.getClusterName();
-                                            clusterSubpath = matchingPath;
+                                            clusterSubpath = matchedRule.rewritePath(matchingPath);
+                                            matchedRouteRule = true;
                                         }
                                     }
                                 }
@@ -232,7 +255,7 @@ public class HttpTransport implements ServerTransport {
                                     }
 
                                     // Layer 7 Reverse Proxy Load Balancing
-                                    if (targetCluster.getRoutingMode() == Cluster.RoutingMode.TELEMETRY_ONLY) {
+                                    if (!matchedRouteRule && targetCluster.getRoutingMode() == Cluster.RoutingMode.TELEMETRY_ONLY) {
                                         s.setStatus(403);
                                         try (PrintWriter out = s.getWriter()) {
                                             out.print("403 Forbidden - Load balancing is disabled for cluster: " + targetClusterName);
@@ -375,7 +398,7 @@ public class HttpTransport implements ServerTransport {
                                 } else {
                                     final String finalLookupPath = matchingPath;
                                     RouteHandlerInfo routeInfo = routeCache.computeIfAbsent(finalLookupPath, path -> {
-                                        String routeName = path.length() > 1 ? path.substring(1).toUpperCase() : "GET_NODES";
+                                        String routeName = toRouteName(path);
                                         BiConsumer<String, PrintWriter> handler = registry.getRoutes().get(routeName);
                                         return new RouteHandlerInfo(handler, routeName);
                                     });
@@ -397,7 +420,7 @@ public class HttpTransport implements ServerTransport {
                                     } else {
                                         s.setStatus(404);
                                         try (PrintWriter out = s.getWriter()) {
-                                            out.print("404 Not Found - Unknown Route: " + routeInfo.routeName);
+                                            out.print("404 Not Found - Unknown Route: " + matchingPath);
                                         }
                                     }
                                 }
@@ -454,6 +477,13 @@ public class HttpTransport implements ServerTransport {
             }
         }
         return null;
+    }
+
+    private static String toRouteName(String path) {
+        if (path == null || path.equals("/") || path.isEmpty()) {
+            return "/";
+        }
+        return path.startsWith("/") ? path.substring(1).toUpperCase() : path.toUpperCase();
     }
 
     @Override

@@ -57,18 +57,21 @@ public class UndertowHttpTransport implements ServerTransport {
 
     private hexacloud.core.server.PerformanceProfile performanceProfile = hexacloud.core.server.PerformanceProfile.STANDARD;
     private final List<HttpFilter> activeFilters = new CopyOnWriteArrayList<>();
+    private hexacloud.core.ports.SslContextPort sslContextPort;
 
     private void rebuildFilters(Cluster cluster, List<HttpFilter> customFilters) {
         activeFilters.clear();
-        String allowedIps = cluster.getAllowedIps();
-        if (allowedIps != null && !allowedIps.trim().isEmpty()) {
-            activeFilters.add(new IpRestrictionFilter(cluster));
-        }
-        if (cluster.getRateLimitRequests() > 0 && cluster.getRateLimitDurationSeconds() > 0) {
-            activeFilters.add(new RateLimitFilter(cluster));
-        }
-        if (cluster.isRequireToken()) {
-            activeFilters.add(new TokenAuthFilter(cluster));
+        if (cluster != null) {
+            String allowedIps = cluster.getAllowedIps();
+            if (allowedIps != null && !allowedIps.trim().isEmpty()) {
+                activeFilters.add(new IpRestrictionFilter(cluster));
+            }
+            if (cluster.getRateLimitRequests() > 0 && cluster.getRateLimitDurationSeconds() > 0) {
+                activeFilters.add(new RateLimitFilter(cluster));
+            }
+            if (cluster.isRequireToken()) {
+                activeFilters.add(new TokenAuthFilter(cluster));
+            }
         }
         activeFilters.addAll(customFilters);
 
@@ -87,6 +90,10 @@ public class UndertowHttpTransport implements ServerTransport {
         }
     }
 
+    public void setSslContext(hexacloud.core.ports.SslContextPort sslContextPort) {
+        this.sslContextPort = sslContextPort;
+    }
+
     @Override
     public void listen(int port, RouteRegistry registry, Cluster cluster, List<HttpFilter> customFilters) {
         try {
@@ -102,6 +109,10 @@ public class UndertowHttpTransport implements ServerTransport {
             Undertow.Builder builder = Undertow.builder()
                     .addHttpListener(port, "0.0.0.0")
                     .setByteBufferPool(bufferPool);
+            
+            if (sslContextPort != null && sslContextPort.isSslEnabled()) {
+                builder.addHttpsListener(sslContextPort.getSslPort(), "0.0.0.0", sslContextPort.getSslContext());
+            }
  
             if (performanceProfile == hexacloud.core.server.PerformanceProfile.MAX_PERFORMANCE) {
                 // Maximized performance profile for container resource utilization
@@ -139,7 +150,7 @@ public class UndertowHttpTransport implements ServerTransport {
                                  isProxy = true;
                              } else if (registry.getRouteRulesList() != null && !registry.getRouteRulesList().isEmpty()) {
                                  fastRouteInfo = routeCache.computeIfAbsent(fastMatchingPath, path -> {
-                                     String routeName = path.length() > 1 ? path.substring(1).toUpperCase() : "GET_NODES";
+                                     String routeName = toRouteName(path);
                                      BiConsumer<String, PrintWriter> handler = registry.getRoutes().get(routeName);
                                      return new RouteHandlerInfo(handler, routeName);
                                  });
@@ -150,7 +161,7 @@ public class UndertowHttpTransport implements ServerTransport {
                              if (!isProxy && activeFilters.isEmpty()) {
                                  if (fastRouteInfo == null) {
                                      fastRouteInfo = routeCache.computeIfAbsent(fastMatchingPath, path -> {
-                                         String routeName = path.length() > 1 ? path.substring(1).toUpperCase() : "GET_NODES";
+                                         String routeName = toRouteName(path);
                                          BiConsumer<String, PrintWriter> handler = registry.getRoutes().get(routeName);
                                          return new RouteHandlerInfo(handler, routeName);
                                      });
@@ -204,7 +215,7 @@ public class UndertowHttpTransport implements ServerTransport {
              // Fast-path for direct custom routes when no filters are active
              if (!isProxy && activeFilters.isEmpty()) {
                  RouteHandlerInfo routeInfo = routeCache.computeIfAbsent(fastMatchingPath, path -> {
-                     String routeName = path.length() > 1 ? path.substring(1).toUpperCase() : "GET_NODES";
+                     String routeName = toRouteName(path);
                      BiConsumer<String, PrintWriter> handler = registry.getRoutes().get(routeName);
                      return new RouteHandlerInfo(handler, routeName);
                  });
@@ -251,6 +262,7 @@ public class UndertowHttpTransport implements ServerTransport {
 
                      String targetClusterName = null;
                      String clusterSubpath = null;
+                     boolean matchedRouteRule = false;
 
                      if (matchingPath.startsWith("/clusters/")) {
                          String pathWithoutClusters = matchingPath.substring("/clusters/".length());
@@ -263,7 +275,7 @@ public class UndertowHttpTransport implements ServerTransport {
                              clusterSubpath = "/";
                          }
                      } else {
-                         String routeName = matchingPath.length() > 1 ? matchingPath.substring(1).toUpperCase() : "GET_NODES";
+                         String routeName = toRouteName(matchingPath);
                          if (!registry.getRoutes().containsKey(routeName)) {
                              String requestHost = r.getHeader("Host");
                              RouteRule matchedRule = null;
@@ -278,7 +290,8 @@ public class UndertowHttpTransport implements ServerTransport {
                              }
                              if (matchedRule != null) {
                                  targetClusterName = matchedRule.getClusterName();
-                                 clusterSubpath = matchingPath;
+                                 clusterSubpath = matchedRule.rewritePath(matchingPath);
+                                 matchedRouteRule = true;
                              }
                          }
                      }
@@ -316,7 +329,7 @@ public class UndertowHttpTransport implements ServerTransport {
                          }
 
                          // Layer 7 Reverse Proxy Load Balancing
-                         if (targetCluster.getRoutingMode() == Cluster.RoutingMode.TELEMETRY_ONLY) {
+                         if (!matchedRouteRule && targetCluster.getRoutingMode() == Cluster.RoutingMode.TELEMETRY_ONLY) {
                              s.setStatus(403);
                              try (PrintWriter out = s.getWriter()) {
                                  out.print("403 Forbidden - Load balancing is disabled for cluster: " + targetClusterName);
@@ -467,7 +480,7 @@ public class UndertowHttpTransport implements ServerTransport {
                         // Direct Custom Routes
                         final String finalLookupPath = matchingPath;
                         RouteHandlerInfo routeInfo = routeCache.computeIfAbsent(finalLookupPath, path -> {
-                            String routeName = path.length() > 1 ? path.substring(1).toUpperCase() : "GET_NODES";
+                            String routeName = toRouteName(path);
                             BiConsumer<String, PrintWriter> handler = registry.getRoutes().get(routeName);
                             return new RouteHandlerInfo(handler, routeName);
                         });
@@ -489,7 +502,7 @@ public class UndertowHttpTransport implements ServerTransport {
                         } else {
                             s.setStatus(404);
                             try (PrintWriter out = s.getWriter()) {
-                                out.print("404 Not Found - Unknown Route: " + routeInfo.routeName);
+                                out.print("404 Not Found - Unknown Route: " + matchingPath);
                             }
                         }
                     }
@@ -553,6 +566,13 @@ public class UndertowHttpTransport implements ServerTransport {
     @Override
     public boolean isRunning() {
         return running;
+    }
+
+    private static String toRouteName(String path) {
+        if (path == null || path.equals("/") || path.isEmpty()) {
+            return "/";
+        }
+        return path.startsWith("/") ? path.substring(1).toUpperCase() : path.toUpperCase();
     }
 
     private static class RouteHandlerInfo {
