@@ -249,7 +249,6 @@ public class ServerManager implements ServerOperations {
     }
 
     public void addRouteRule(RouteRule rule) {
-        DebugUtils.info("new route rule: " + rule);
         if (rule == null) {
             return;
         }
