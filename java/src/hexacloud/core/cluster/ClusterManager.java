@@ -80,7 +80,7 @@ public class ClusterManager implements ClusterListener, ClusterOperations {
         return this;
 	}
 
-    @Override // this method ok
+    @Override
     public void onClusterEvent(ClusterEvent event) {
         Casts.as(event, NodeStatusChanged.class).ifPresent(statusEvent -> {
             if (statusEvent != null) {
@@ -89,7 +89,9 @@ public class ClusterManager implements ClusterListener, ClusterOperations {
                     statusEvent.nodeId(),
                     "Node status changed: " + statusEvent.nodeId() + " -> " + statusEvent.status()
                 );
-                this.cluster.updateStatusServer(statusEvent.nodeId(), statusEvent.status());
+                // statusEvent.host() == node.getFullHost(), which is the actual map key.
+                // statusEvent.nodeId() is the node name and must NOT be used as a lookup key.
+                this.cluster.updateStatusServer(statusEvent.host(), statusEvent.status());
             }
         });
     }
