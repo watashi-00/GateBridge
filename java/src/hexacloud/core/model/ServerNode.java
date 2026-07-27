@@ -2,7 +2,8 @@ package hexacloud.core.model;
 
 /**
  * Represents a registered service node inside a cluster.
- * Contains connection coordinates, status metadata, and health-check configurations.
+ * Contains connection coordinates, status metadata, health-check configurations,
+ * and routing protocol declaration.
  */
 public class ServerNode {
     private final String id;
@@ -17,6 +18,7 @@ public class ServerNode {
     private final String pingHeaderValue;
     private final boolean isDynamic;
     private final boolean telemetryOnly;
+    private final RoutingProtocol routingProtocol;
 
     private int latencyMs = 0;
     private double cpuUsage = 0.0;
@@ -24,10 +26,11 @@ public class ServerNode {
     private String runtime = "";
 
     /**
-     * Primary constructor including node name, isDynamic, and telemetryOnly flags.
+     * Primary constructor including node name, isDynamic, telemetryOnly flags, and routingProtocol.
      */
     public ServerNode(String name, String host, int port, NodeStatus status, boolean isExternal,
-                      PingProtocol pingProtocol, String pingPath, String pingHeaderName, String pingHeaderValue, boolean isDynamic, boolean telemetryOnly) {
+                      PingProtocol pingProtocol, String pingPath, String pingHeaderName, String pingHeaderValue,
+                      boolean isDynamic, boolean telemetryOnly, RoutingProtocol routingProtocol) {
         this.name = name != null && !name.isEmpty() ? name : (host + ":" + port);
         this.host = host;
         this.port = port;
@@ -39,7 +42,16 @@ public class ServerNode {
         this.pingHeaderValue = pingHeaderValue;
         this.isDynamic = isDynamic;
         this.telemetryOnly = telemetryOnly;
+        this.routingProtocol = routingProtocol != null ? routingProtocol : RoutingProtocol.HTTP;
         this.id = name;
+    }
+
+    /**
+     * Constructor including node name, isDynamic and telemetryOnly flags.
+     */
+    public ServerNode(String name, String host, int port, NodeStatus status, boolean isExternal,
+                      PingProtocol pingProtocol, String pingPath, String pingHeaderName, String pingHeaderValue, boolean isDynamic, boolean telemetryOnly) {
+        this(name, host, port, status, isExternal, pingProtocol, pingPath, pingHeaderName, pingHeaderValue, isDynamic, telemetryOnly, RoutingProtocol.HTTP);
     }
 
     /**
@@ -47,7 +59,7 @@ public class ServerNode {
      */
     public ServerNode(String name, String host, int port, NodeStatus status, boolean isExternal,
                       PingProtocol pingProtocol, String pingPath, String pingHeaderName, String pingHeaderValue, boolean isDynamic) {
-        this(name, host, port, status, isExternal, pingProtocol, pingPath, pingHeaderName, pingHeaderValue, isDynamic, false);
+        this(name, host, port, status, isExternal, pingProtocol, pingPath, pingHeaderName, pingHeaderValue, isDynamic, false, RoutingProtocol.HTTP);
     }
 
     /**
@@ -55,7 +67,7 @@ public class ServerNode {
      */
     public ServerNode(String name, String host, int port, NodeStatus status, boolean isExternal,
                       PingProtocol pingProtocol, String pingPath, String pingHeaderName, String pingHeaderValue) {
-        this(name, host, port, status, isExternal, pingProtocol, pingPath, pingHeaderName, pingHeaderValue, false);
+        this(name, host, port, status, isExternal, pingProtocol, pingPath, pingHeaderName, pingHeaderValue, false, false, RoutingProtocol.HTTP);
     }
 
     /**
@@ -63,12 +75,12 @@ public class ServerNode {
      */
     public ServerNode(String host, int port, NodeStatus status, boolean isExternal,
                       PingProtocol pingProtocol, String pingPath, String pingHeaderName, String pingHeaderValue) {
-        this(host + ":" + port, host, port, status, isExternal, pingProtocol, pingPath, pingHeaderName, pingHeaderValue);
+        this(host + ":" + port, host, port, status, isExternal, pingProtocol, pingPath, pingHeaderName, pingHeaderValue, false, false, RoutingProtocol.HTTP);
     }
 
     public ServerNode(String name, String host, int port, NodeStatus status, boolean isExternal,
                       boolean pingEnabled, String pingPath, String pingHeaderName, String pingHeaderValue) {
-        this(name, host, port, status, isExternal, pingEnabled ? PingProtocol.HTTP : PingProtocol.NONE, pingPath, pingHeaderName, pingHeaderValue);
+        this(name, host, port, status, isExternal, pingEnabled ? PingProtocol.HTTP : PingProtocol.NONE, pingPath, pingHeaderName, pingHeaderValue, false, false, RoutingProtocol.HTTP);
     }
 
     /**
@@ -76,18 +88,18 @@ public class ServerNode {
      */
     public ServerNode(String host, int port, NodeStatus status, boolean isExternal,
                       boolean pingEnabled, String pingPath, String pingHeaderName, String pingHeaderValue) {
-        this(host + ":" + port, host, port, status, isExternal, pingEnabled ? PingProtocol.HTTP : PingProtocol.NONE, pingPath, pingHeaderName, pingHeaderValue);
+        this(host + ":" + port, host, port, status, isExternal, pingEnabled ? PingProtocol.HTTP : PingProtocol.NONE, pingPath, pingHeaderName, pingHeaderValue, false, false, RoutingProtocol.HTTP);
     }
 
     public ServerNode(String name, String host, int port, NodeStatus status, boolean isExternal) {
-        this(name, host, port, status, isExternal, PingProtocol.HTTP, "/", null, null);
+        this(name, host, port, status, isExternal, PingProtocol.HTTP, "/", null, null, false, false, RoutingProtocol.HTTP);
     }
 
     /**
      * Constructor for default health-check settings.
      */
     public ServerNode(String host, int port, NodeStatus status, boolean isExternal) {
-        this(host + ":" + port, host, port, status, isExternal, PingProtocol.HTTP, "/", null, null);
+        this(host + ":" + port, host, port, status, isExternal, PingProtocol.HTTP, "/", null, null, false, false, RoutingProtocol.HTTP);
     }
 
     /**
@@ -200,9 +212,17 @@ public class ServerNode {
         return telemetryOnly;
     }
 
+    /**
+     * Returns the protocol used to route traffic TO this node.
+     * Defaults to HTTP. TCP nodes only receive raw TCP tunnel traffic.
+     */
+    public RoutingProtocol routingProtocol() {
+        return routingProtocol;
+    }
+
     public ServerNode withDynamic(boolean isDynamic) {
         ServerNode node = new ServerNode(this.name, this.host, this.port, this.status, this.isExternal,
-                this.pingProtocol, this.pingPath, this.pingHeaderName, this.pingHeaderValue, isDynamic, this.telemetryOnly);
+                this.pingProtocol, this.pingPath, this.pingHeaderName, this.pingHeaderValue, isDynamic, this.telemetryOnly, this.routingProtocol);
         node.setLatencyMs(this.latencyMs);
         node.setCpuUsage(this.cpuUsage);
         node.setRamUsage(this.ramUsage);
@@ -215,7 +235,7 @@ public class ServerNode {
      */
     public ServerNode withStatus(NodeStatus newStatus) {
         ServerNode node = new ServerNode(this.name, this.host, this.port, newStatus, this.isExternal,
-                this.pingProtocol, this.pingPath, this.pingHeaderName, this.pingHeaderValue, this.isDynamic, this.telemetryOnly);
+                this.pingProtocol, this.pingPath, this.pingHeaderName, this.pingHeaderValue, this.isDynamic, this.telemetryOnly, this.routingProtocol);
         node.setLatencyMs(this.latencyMs);
         node.setCpuUsage(this.cpuUsage);
         node.setRamUsage(this.ramUsage);
@@ -228,7 +248,21 @@ public class ServerNode {
      */
     public ServerNode withPingProtocol(PingProtocol newProtocol) {
         ServerNode node = new ServerNode(this.name, this.host, this.port, this.status, this.isExternal,
-                newProtocol, this.pingPath, this.pingHeaderName, this.pingHeaderValue, this.isDynamic, this.telemetryOnly);
+                newProtocol, this.pingPath, this.pingHeaderName, this.pingHeaderValue, this.isDynamic, this.telemetryOnly, this.routingProtocol);
+        node.setLatencyMs(this.latencyMs);
+        node.setCpuUsage(this.cpuUsage);
+        node.setRamUsage(this.ramUsage);
+        node.setRuntime(this.runtime);
+        return node;
+    }
+
+    /**
+     * Create a new immutable ServerNode instance with an updated routing protocol.
+     */
+    public ServerNode withRoutingProtocol(RoutingProtocol newProtocol) {
+        ServerNode node = new ServerNode(this.name, this.host, this.port, this.status, this.isExternal,
+                this.pingProtocol, this.pingPath, this.pingHeaderName, this.pingHeaderValue,
+                this.isDynamic, this.telemetryOnly, newProtocol != null ? newProtocol : RoutingProtocol.HTTP);
         node.setLatencyMs(this.latencyMs);
         node.setCpuUsage(this.cpuUsage);
         node.setRamUsage(this.ramUsage);
@@ -263,6 +297,7 @@ public class ServerNode {
                 ", status=" + status +
                 ", isExternal=" + isExternal +
                 ", pingProtocol=" + pingProtocol +
+                ", routingProtocol=" + routingProtocol +
                 ", pingPath='" + pingPath + '\'' +
                 '}';
     }
