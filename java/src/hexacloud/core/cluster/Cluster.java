@@ -94,7 +94,6 @@ public class Cluster {
             String host = validHost(node.host());
             if (host == null) return;
 
-            String fullHost = host + ":" + node.port();
             if (bootstrapMode) {
                 registeredStaticNodesThisRun.add(node.getId());
                 staticNodes.add(node.getId());
