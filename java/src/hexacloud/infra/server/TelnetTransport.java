@@ -28,8 +28,9 @@ public class TelnetTransport implements ServerTransport {
     private final ExecutorService threadPool = ThreadManager.newVirtualThreadPool();
 
     @Override
-    public void listen(int port, RouteRegistry registry, hexacloud.core.cluster.Cluster cluster, List<HttpFilter> customFilters) {
-        new Thread(() -> serverListen(port, registry, cluster), "TelnetServer-Listener-" + port).start();
+    public void listen(int port, RouteRegistry registry, java.util.List<hexacloud.core.cluster.Cluster> clusters, List<HttpFilter> customFilters) {
+        hexacloud.core.cluster.Cluster defaultCluster = clusters != null && !clusters.isEmpty() ? clusters.get(0) : null;
+        new Thread(() -> serverListen(port, registry, defaultCluster), "TelnetServer-Listener-" + port).start();
     }
 
     private void serverListen(int port, RouteRegistry registry, hexacloud.core.cluster.Cluster cluster) {

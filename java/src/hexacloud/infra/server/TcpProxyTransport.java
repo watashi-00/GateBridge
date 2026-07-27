@@ -45,11 +45,11 @@ public class TcpProxyTransport implements ServerTransport {
     }
 
     @Override
-    public void listen(int port, RouteRegistry registry, Cluster cluster, List<HttpFilter> customFilters) {
-        new Thread(() -> serverListen(port, cluster), "TcpProxyServer-Listener-" + port).start();
+    public void listen(int port, RouteRegistry registry, List<Cluster> clusters, List<HttpFilter> customFilters) {
+        new Thread(() -> serverListen(port, clusters), "TcpProxyServer-Listener-" + port).start();
     }
 
-    private void serverListen(int port, Cluster cluster) {
+    private void serverListen(int port, List<Cluster> clusters) {
         DebugUtils.log("TcpProxyTransport starting to listen on port " + port);
         try {
             serverSocket = new ServerSocket(port);
@@ -67,12 +67,12 @@ public class TcpProxyTransport implements ServerTransport {
                     Socket clientSocket = serverSocket.accept();
                     configureSocket(clientSocket);
                     activeSockets.add(clientSocket);
-                    ThreadManager.startVirtual("TcpProxy-Handler-" + clientSocket.getRemoteSocketAddress(), () -> handleConnection(clientSocket, cluster));
+                    ThreadManager.startVirtual("TcpProxy-Handler-" + clientSocket.getRemoteSocketAddress(), () -> handleConnection(clientSocket, clusters));
                 } catch (IOException ex) {
                     if (active && !serverSocket.isClosed()) {
                         DebugUtils.error("TcpProxyTransport transient error accepting connection on port " + port, ex);
                         try {
-                            Thread.sleep(50); // Pause to prevent busy-spinning
+                            Thread.sleep(50);
                         } catch (InterruptedException ie) {
                             Thread.currentThread().interrupt();
                             break;
@@ -85,21 +85,19 @@ public class TcpProxyTransport implements ServerTransport {
         }
     }
 
-    private void handleConnection(Socket clientSocket, Cluster cluster) {
+    private void handleConnection(Socket clientSocket, List<Cluster> clusters) {
         Socket nodeSocket = null;
         try {
-            if (cluster == null || cluster.getRoutingMode() == Cluster.RoutingMode.TELEMETRY_ONLY) {
-                DebugUtils.log("TcpProxyTransport: Cluster is null or routing is disabled for cluster.");
-                closeQuietly(clientSocket);
-                return;
-            }
-
-            List<ServerNode> activeNodes = cluster.getCluster().stream()
-                    .filter(n -> n != null && n.status() == NodeStatus.ONLINE)
+            // Collect all ONLINE TCP nodes across all clusters
+            List<ServerNode> activeNodes = clusters.stream()
+                    .filter(c -> c != null && c.getRoutingMode() != Cluster.RoutingMode.TELEMETRY_ONLY)
+                    .flatMap(c -> c.getCluster().stream())
+                    .filter(n -> n != null && n.status() == NodeStatus.ONLINE
+                              && n.routingProtocol() == hexacloud.core.model.RoutingProtocol.TCP)
                     .collect(Collectors.toList());
 
             if (activeNodes.isEmpty()) {
-                DebugUtils.log("TcpProxyTransport: No active nodes in cluster " + cluster.getClusterName());
+                DebugUtils.log("TcpProxyTransport: No active TCP nodes available.");
                 closeQuietly(clientSocket);
                 return;
             }
@@ -113,15 +111,20 @@ public class TcpProxyTransport implements ServerTransport {
 
             // Connect to backend node and measure latency
             long startTime = System.currentTimeMillis();
-            int timeout = cluster.getTimeoutMs() > 0 ? cluster.getTimeoutMs() : 5000;
+            int timeout = 5000; // default timeout; per-cluster timeout applies at cluster level
             nodeSocket = new Socket();
             configureSocket(nodeSocket);
             nodeSocket.connect(new InetSocketAddress(targetHost, targetPort), timeout);
             long latencyMs = System.currentTimeMillis() - startTime;
 
-            // Update passive telemetry & latency metric
+            // Update passive telemetry & latency metric on the owning cluster
             selectedNode.setLatencyMs((int) latencyMs);
-            cluster.updateTelemetryServer(selectedNode.host(), selectedNode.port(), null, null, null, (int) latencyMs, null);
+            for (Cluster c : clusters) {
+                if (c.getCluster().stream().anyMatch(n -> n != null && n.getId().equals(selectedNode.getId()))) {
+                    c.updateTelemetryServer(selectedNode.host(), selectedNode.port(), null, null, null, (int) latencyMs, null);
+                    break;
+                }
+            }
 
             activeSockets.add(nodeSocket);
 

@@ -104,10 +104,12 @@ public interface ClusterEvent extends Event {
     public static class NodeStatusChanged implements ClusterEvent {
         private final String host;
         private final NodeStatus status;
+        private final String nodeId;
 
-        public NodeStatusChanged(String host, NodeStatus status) {
+        public NodeStatusChanged(String host, NodeStatus status, String nodeId) {
             this.host = host;
             this.status = status;
+            this.nodeId = nodeId;
         }
 
         public String host() {
@@ -118,34 +120,44 @@ public interface ClusterEvent extends Event {
             return status;
         }
 
+        public String nodeId() {
+            return nodeId;
+        }
+
         @Override
         public boolean equals(Object o) {
             if (this == o) return true;
             if (o == null || getClass() != o.getClass()) return false;
             NodeStatusChanged that = (NodeStatusChanged) o;
-            return Objects.equals(host, that.host) && status == that.status;
+            return Objects.equals(host, that.host) && status == that.status && Objects.equals(nodeId, that.nodeId);
         }
 
         @Override
         public int hashCode() {
-            return Objects.hash(host, status);
+            return Objects.hash(host, status, nodeId);
         }
 
         @Override
         public String toString() {
-            return "NodeStatusChanged[host=" + host + ", status=" + status + "]";
+            return "NodeStatusChanged[host=" + host + ", status=" + status + ", nodeId=" + nodeId + "]";
         }
     }
 
     public static class NodeTelemetryUpdated implements ClusterEvent {
         private final String host;
+        private final String nodeId;
 
-        public NodeTelemetryUpdated(String host) {
+        public NodeTelemetryUpdated(String host, String nodeId) {
             this.host = host;
+            this.nodeId = nodeId;
         }
 
         public String host() {
             return host;
+        }
+
+        public String nodeId() {
+            return nodeId;
         }
 
         @Override
@@ -153,17 +165,17 @@ public interface ClusterEvent extends Event {
             if (this == o) return true;
             if (o == null || getClass() != o.getClass()) return false;
             NodeTelemetryUpdated that = (NodeTelemetryUpdated) o;
-            return Objects.equals(host, that.host);
+            return Objects.equals(host, that.host) && Objects.equals(nodeId, that.nodeId);
         }
 
         @Override
         public int hashCode() {
-            return Objects.hash(host);
+            return Objects.hash(host, nodeId);
         }
 
         @Override
         public String toString() {
-            return "NodeTelemetryUpdated[host=" + host + "]";
+            return "NodeTelemetryUpdated[host=" + host + ", nodeId=" + nodeId + "]";
         }
     }
 

@@ -126,7 +126,7 @@ public class IngressRoutingTest {
     public void testV1PrefixPeelingAndNodeFilterJdkTransport() throws Exception {
         RouteRegistry registry = new RouteRegistry();
         jdkTransport = new HttpTransport();
-        jdkTransport.listen(gatewayPort1, registry, testCluster, Collections.emptyList());
+        jdkTransport.listen(gatewayPort1, registry, java.util.List.of(testCluster), Collections.emptyList());
 
         // Test /v1/clusters/ingress-test-cluster/api
         URL url = URI.create("http://127.0.0.1:" + gatewayPort1 + "/v1/clusters/ingress-test-cluster/api").toURL();
@@ -147,7 +147,7 @@ public class IngressRoutingTest {
         registry.addRouteRule(new RouteRule("127.0.0.1", "/app/**", "ingress-test-cluster"));
 
         jdkTransport = new HttpTransport();
-        jdkTransport.listen(gatewayPort1, registry, testCluster, Collections.emptyList());
+        jdkTransport.listen(gatewayPort1, registry, java.util.List.of(testCluster), Collections.emptyList());
 
         URL url = URI.create("http://127.0.0.1:" + gatewayPort1 + "/app/users").toURL();
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
@@ -167,7 +167,7 @@ public class IngressRoutingTest {
         registry.addRouteRule(new RouteRule("localhost", "/auth/**", "ingress-test-cluster"));
 
         jdkTransport = new HttpTransport();
-        jdkTransport.listen(gatewayPort1, registry, testCluster, Collections.emptyList());
+        jdkTransport.listen(gatewayPort1, registry, java.util.List.of(testCluster), Collections.emptyList());
 
         URL url = URI.create("http://localhost:" + gatewayPort1 + "/auth/a").toURL();
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
@@ -205,7 +205,7 @@ public class IngressRoutingTest {
             registry.addRouteRule(new RouteRule("localhost", "/gateway/**", "rewrite-test-cluster", "/api"));
 
             jdkTransport = new HttpTransport();
-            jdkTransport.listen(gatewayPort1, registry, testCluster, Collections.emptyList());
+            jdkTransport.listen(gatewayPort1, registry, java.util.List.of(testCluster), Collections.emptyList());
 
             assertEquals("/", sendGetBody("http://localhost:" + gatewayPort1 + "/auth/a"));
             assertEquals("/api/a", sendGetBody("http://localhost:" + gatewayPort1 + "/gateway/a"));
@@ -238,7 +238,7 @@ public class IngressRoutingTest {
             registry.addRouteRule(new RouteRule("localhost", "/gateway/**", "rewrite-test-cluster-undertow", "/api"));
 
             undertowTransport = new UndertowHttpTransport();
-            undertowTransport.listen(gatewayPort2, registry, testCluster, Collections.emptyList());
+            undertowTransport.listen(gatewayPort2, registry, java.util.List.of(testCluster), Collections.emptyList());
 
             assertEquals("/", sendGetBody("http://localhost:" + gatewayPort2 + "/auth/a"));
             assertEquals("/api/a", sendGetBody("http://localhost:" + gatewayPort2 + "/gateway/a"));
@@ -270,7 +270,7 @@ public class IngressRoutingTest {
             registry.addRouteRule(new RouteRule("localhost", "/auth/**", "route-rule-telemetry-only-cluster"));
 
             undertowTransport = new UndertowHttpTransport();
-            undertowTransport.listen(gatewayPort2, registry, testCluster, Collections.emptyList());
+            undertowTransport.listen(gatewayPort2, registry, java.util.List.of(testCluster), Collections.emptyList());
 
             assertEquals("routed", sendGetBody("http://localhost:" + gatewayPort2 + "/auth/a"));
         } finally {
@@ -284,7 +284,7 @@ public class IngressRoutingTest {
         registry.addRouteRule(new RouteRule("127.0.0.1", "/app/**", "ingress-test-cluster"));
 
         undertowTransport = new UndertowHttpTransport();
-        undertowTransport.listen(gatewayPort2, registry, testCluster, Collections.emptyList());
+        undertowTransport.listen(gatewayPort2, registry, java.util.List.of(testCluster), Collections.emptyList());
 
         URL url = URI.create("http://127.0.0.1:" + gatewayPort2 + "/app/users").toURL();
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
@@ -309,7 +309,7 @@ public class IngressRoutingTest {
         ClusterRegistry.getInstance().registerCluster(telemetryOnlyCluster);
 
         jdkTransport = new HttpTransport();
-        jdkTransport.listen(gatewayPort1, registry, telemetryOnlyCluster, Collections.emptyList());
+        jdkTransport.listen(gatewayPort1, registry, java.util.List.of(telemetryOnlyCluster), Collections.emptyList());
 
         URL url = URI.create("http://127.0.0.1:" + gatewayPort1 + "/clusters/telemetry-only-cluster/data").toURL();
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
@@ -329,7 +329,7 @@ public class IngressRoutingTest {
         ClusterRegistry.getInstance().registerCluster(telemetryOnlyCluster);
 
         undertowTransport = new UndertowHttpTransport();
-        undertowTransport.listen(gatewayPort2, registry, telemetryOnlyCluster, Collections.emptyList());
+        undertowTransport.listen(gatewayPort2, registry, java.util.List.of(telemetryOnlyCluster), Collections.emptyList());
 
         URL url = URI.create("http://127.0.0.1:" + gatewayPort2 + "/clusters/telemetry-only-cluster-undertow/data").toURL();
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
@@ -350,7 +350,7 @@ public class IngressRoutingTest {
         registry.addRouteRule(new RouteRule("127.0.0.1", "/**", "ingress-test-cluster"));
 
         jdkTransport = new HttpTransport();
-        jdkTransport.listen(gatewayPort1, registry, testCluster, Collections.emptyList());
+        jdkTransport.listen(gatewayPort1, registry, java.util.List.of(testCluster), Collections.emptyList());
 
         URL url = URI.create("http://127.0.0.1:" + gatewayPort1 + "/test_local").toURL();
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
@@ -370,7 +370,7 @@ public class IngressRoutingTest {
         registry.registerController(new ClusterController(testCluster));
 
         jdkTransport = new HttpTransport();
-        jdkTransport.listen(gatewayPort1, registry, testCluster, Collections.emptyList());
+        jdkTransport.listen(gatewayPort1, registry, java.util.List.of(testCluster), Collections.emptyList());
 
         URL rootUrl = URI.create("http://127.0.0.1:" + gatewayPort1 + "/").toURL();
         HttpURLConnection rootConn = (HttpURLConnection) rootUrl.openConnection();
@@ -396,7 +396,7 @@ public class IngressRoutingTest {
         registry.registerController(new ClusterController(testCluster));
 
         undertowTransport = new UndertowHttpTransport();
-        undertowTransport.listen(gatewayPort2, registry, testCluster, Collections.emptyList());
+        undertowTransport.listen(gatewayPort2, registry, java.util.List.of(testCluster), Collections.emptyList());
 
         URL rootUrl = URI.create("http://127.0.0.1:" + gatewayPort2 + "/").toURL();
         HttpURLConnection rootConn = (HttpURLConnection) rootUrl.openConnection();
@@ -428,7 +428,7 @@ public class IngressRoutingTest {
         registry.addRouteRule(new RouteRule("127.0.0.1", "/**", "ingress-test-cluster"));
 
         undertowTransport = new UndertowHttpTransport();
-        undertowTransport.listen(gatewayPort2, registry, testCluster, Collections.emptyList());
+        undertowTransport.listen(gatewayPort2, registry, java.util.List.of(testCluster), Collections.emptyList());
 
         URL url = URI.create("http://127.0.0.1:" + gatewayPort2 + "/test_local").toURL();
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();

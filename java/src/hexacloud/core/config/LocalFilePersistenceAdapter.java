@@ -87,7 +87,7 @@ public class LocalFilePersistenceAdapter implements ClusterPersistencePort {
 
             java.util.List<String> nodeKeys = new java.util.ArrayList<>();
             for (ServerNode node : cluster.getCluster()) {
-                String nodeKey = node.getFullHost();
+                String nodeKey = node.getId();
                 nodeKeys.add(nodeKey);
 
                 writer.println("# === BEGIN NODE " + nodeKey + " ===");
@@ -269,7 +269,7 @@ public class LocalFilePersistenceAdapter implements ClusterPersistencePort {
                 );
                 
                 boolean alreadyRegistered = cluster.getCluster().stream()
-                    .anyMatch(n -> n.getFullHost().equals(node.getFullHost()));
+                    .anyMatch(n -> n.getId().equals(node.getId()));
                 if (!alreadyRegistered) {
                     cluster.registerLoadedServer(node);
                 }

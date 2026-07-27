@@ -48,10 +48,10 @@ public class ClusterService {
 
         NodeStatus finalStatus = requestedStatus != null ? requestedStatus : NodeStatus.ONLINE;
         if (result.statusChanged()) {
-            cluster.dispatchEvent(new ClusterEvent.NodeStatusChanged(result.host(), finalStatus));
+            cluster.dispatchEvent(new ClusterEvent.NodeStatusChanged(result.nodeId(), finalStatus, result.nodeId()));
         }
         if (result.telemetryUpdated()) {
-            cluster.dispatchEvent(new ClusterEvent.NodeTelemetryUpdated(result.host()));
+            cluster.dispatchEvent(new ClusterEvent.NodeTelemetryUpdated(result.host(), result.nodeId()));
         }
         if (request.getEventName() != null && !StrUtils.isBlank(request.getEventName())) {
             cluster.dispatchEvent(new ClusterEvent.NodeEventSubmitted(

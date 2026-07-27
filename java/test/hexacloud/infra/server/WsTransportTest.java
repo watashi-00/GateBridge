@@ -25,7 +25,7 @@ public class WsTransportTest {
     public void testWebSocketHandshakeAndEventStream() throws Exception {
         int port = findFreePort();
         WsTransport transport = new WsTransport();
-        transport.listen(port, new RouteRegistry(), new Cluster("ws-test-cluster"), new java.util.ArrayList<>());
+        transport.listen(port, new RouteRegistry(), java.util.List.of(new Cluster("ws-test-cluster")), new java.util.ArrayList<>());
 
         waitUntilRunning(transport);
 
@@ -49,7 +49,7 @@ public class WsTransportTest {
             String connectedFrame = readTextFrame(in);
             assertTrue(connectedFrame.contains("\"type\":\"Connected\""));
 
-            EventBusManager.getGlobal().dispatch(new ClusterEvent.NodeTelemetryUpdated("http://127.0.0.1:7001"));
+            EventBusManager.getGlobal().dispatch(new ClusterEvent.NodeTelemetryUpdated("http://127.0.0.1:7001", "http://127.0.0.1:7001"));
             String eventFrame = readTextFrame(in);
             assertTrue(eventFrame.contains("\"type\":\"NodeTelemetryUpdated\""));
             assertTrue(eventFrame.contains("http://127.0.0.1:7001"));

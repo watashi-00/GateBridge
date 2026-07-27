@@ -106,7 +106,7 @@ public class L7RoutingTest {
         });
 
         transport = new HttpTransport();
-        transport.listen(gatewayPort, registry, testCluster, new ArrayList<>());
+        transport.listen(gatewayPort, registry, java.util.List.of(testCluster), new ArrayList<>());
 
         waitUntilRunning(transport);
     }
@@ -196,7 +196,7 @@ public class L7RoutingTest {
     public void testNoActiveNodesServiceUnavailable() throws Exception {
         // Set all nodes offline
         for (ServerNode node : testCluster.getCluster()) {
-            testCluster.updateStatusServer(node.getFullHost(), NodeStatus.OFFLINE);
+            testCluster.updateStatusServer(node.getId(), NodeStatus.OFFLINE);
         }
 
         String urlStr = "http://127.0.0.1:" + gatewayPort + "/clusters/l7-test-cluster/api/data";

@@ -46,7 +46,7 @@ public class WsTransport implements ServerTransport {
     private volatile boolean running = false;
 
     @Override
-    public void listen(int port, RouteRegistry registry, hexacloud.core.cluster.Cluster cluster, List<HttpFilter> customFilters) {
+    public void listen(int port, RouteRegistry registry, java.util.List<hexacloud.core.cluster.Cluster> clusters, List<HttpFilter> customFilters) {
         threadPool.execute(() -> serverListen(port));
     }
 

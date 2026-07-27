@@ -164,7 +164,7 @@ class LocalGatewayAdapter implements GatewayBuilderPort, RunningGatewayPort {
 
     private void ensureServerManagerInitialized() {
         if(this.serverManager == null) {
-            this.serverManager = new ServerManager(getCluster(), this.clusterEventManager);
+            this.serverManager = new ServerManager(getClusters(), this.clusterEventManager);
             this.serverManager.setHttpEngine(this.httpEngine);
             this.serverManager.setPerformanceProfile(this.performanceProfile);
             this.serverManager.enableTcpProxy(this.tcpProxyEnabled);
@@ -342,6 +342,19 @@ class LocalGatewayAdapter implements GatewayBuilderPort, RunningGatewayPort {
         ensureServerManagerInitialized();
         this.serverManager.registerFilter(filter);
         return this;
+    }
+
+    @Override
+    public LocalGatewayAdapter authService(String authServiceUrl) {
+        return authService(authServiceUrl, 3000);
+    }
+
+    @Override
+    public LocalGatewayAdapter authService(String authServiceUrl, int timeoutMs) {
+        if (authServiceUrl == null || authServiceUrl.trim().isEmpty()) {
+            throw new IllegalArgumentException("authServiceUrl must not be null or empty");
+        }
+        return registerFilter(new hexacloud.core.server.filter.builtin.ExternalAuthFilter(authServiceUrl, timeoutMs));
     }
 
     @Override

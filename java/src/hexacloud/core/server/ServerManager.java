@@ -20,7 +20,7 @@ import hexacloud.infra.server.WsTransport;
 
 public class ServerManager implements ServerOperations {
 
-    private final Cluster cluster;
+    private final List<Cluster> clusters;
     protected final ClusterEventBusManager eventManager;
     private final RouteRegistry routeRegistry;
     private final List<ServerTransport> activeTransports = new ArrayList<>();
@@ -36,14 +36,29 @@ public class ServerManager implements ServerOperations {
     private hexacloud.core.server.PerformanceProfile performanceProfile = hexacloud.core.server.PerformanceProfile.STANDARD;
     private hexacloud.core.ports.SslContextPort sslContextPort;
 
-    public ServerManager(Cluster cluster, ClusterEventBusManager eventManager) {
-        this.cluster = cluster;
+    /**
+     * Primary constructor accepting all clusters. Used by LocalGatewayAdapter.
+     */
+    public ServerManager(List<Cluster> clusters, ClusterEventBusManager eventManager) {
+        this.clusters = clusters != null ? clusters : new ArrayList<>();
         this.eventManager = eventManager;
         this.routeRegistry = new RouteRegistry();
-        if (cluster != null) {
+        for (Cluster cluster : this.clusters) {
             this.routeRegistry.registerController(new ClusterController(cluster));
         }
         autoRegisterControllers();
+    }
+
+    /**
+     * Convenience constructor for single-cluster usage (backward compatible).
+     */
+    public ServerManager(Cluster cluster, ClusterEventBusManager eventManager) {
+        this(cluster != null ? List.of(cluster) : List.of(), eventManager);
+    }
+
+    public ServerManager(int port, Cluster cluster, ClusterEventBusManager eventManager) {
+        this(cluster != null ? List.of(cluster) : List.of(), eventManager);
+        this.port = port;
     }
 
     private void autoRegisterControllers() {
@@ -56,11 +71,12 @@ public class ServerManager implements ServerOperations {
                 
                 try {
                     hexacloud.core.server.route.RouteController controller = null;
+                    Cluster firstCluster = clusters.isEmpty() ? null : clusters.get(0);
                     try {
-                        if (cluster != null) {
+                        if (firstCluster != null) {
                             java.lang.reflect.Constructor<?> ctor = clazz.getDeclaredConstructor(Cluster.class);
                             ctor.setAccessible(true);
-                            controller = (hexacloud.core.server.route.RouteController) ctor.newInstance(cluster);
+                            controller = (hexacloud.core.server.route.RouteController) ctor.newInstance(firstCluster);
                         }
                     } catch (NoSuchMethodException e) {
                         java.lang.reflect.Constructor<?> ctor = clazz.getDeclaredConstructor();
@@ -70,8 +86,8 @@ public class ServerManager implements ServerOperations {
 
                     if (controller != null) {
                         this.routeRegistry.registerController(controller);
-                        if (this.cluster != null) {
-                            this.cluster.getRouteRegistry().registerController(controller);
+                        for (Cluster c : this.clusters) {
+                            c.getRouteRegistry().registerController(controller);
                         }
                         DebugUtils.log("RouteScanner: Auto-discovered and registered controller: " + clazz.getName());
                     }
@@ -82,11 +98,6 @@ public class ServerManager implements ServerOperations {
         } catch (Exception e) {
             DebugUtils.error("RouteScanner: Failed to scan classpath for RouteControllers", e);
         }
-    }
-
-    public ServerManager(int port, Cluster cluster, ClusterEventBusManager eventManager) {
-        this(cluster, eventManager);
-        this.port = port;
     }
 
     public ServerManager enableTelnet(boolean enabled) {
@@ -175,7 +186,7 @@ public class ServerManager implements ServerOperations {
 
         if(telnetEnabled) {
             ServerTransport telnet = new TelnetTransport();
-            telnet.listen(port, routeRegistry, cluster, customFilters);
+            telnet.listen(port, routeRegistry, clusters, customFilters);
             activeTransports.add(telnet);
         }
         
@@ -192,21 +203,21 @@ public class ServerManager implements ServerOperations {
             }
             http.setPerformanceProfile(this.performanceProfile);
             // HTTP runs on port + 1
-            http.listen(port + 1, routeRegistry, cluster, customFilters);
+            http.listen(port + 1, routeRegistry, clusters, customFilters);
             activeTransports.add(http);
         }
         
         if(wsEnabled) {
             ServerTransport ws = new WsTransport();
             // WS runs on port + 2
-            ws.listen(port + 2, routeRegistry, cluster, customFilters);
+            ws.listen(port + 2, routeRegistry, clusters, customFilters);
             activeTransports.add(ws);
         }
 
         if(tcpProxyEnabled) {
             ServerTransport tcpProxy = new TcpProxyTransport();
             // TCP Proxy runs on port + 3
-            tcpProxy.listen(port + 3, routeRegistry, cluster, customFilters);
+            tcpProxy.listen(port + 3, routeRegistry, clusters, customFilters);
             activeTransports.add(tcpProxy);
         }
         
@@ -242,14 +253,13 @@ public class ServerManager implements ServerOperations {
      */
     public ServerManager registerRouteController(hexacloud.core.server.route.RouteController controller) {
         this.routeRegistry.registerController(controller);
-        if (this.cluster != null) {
-            this.cluster.getRouteRegistry().registerController(controller);
+        for (Cluster c : this.clusters) {
+            c.getRouteRegistry().registerController(controller);
         }
         return this;
     }
 
     public void addRouteRule(RouteRule rule) {
-        DebugUtils.info("new route rule: " + rule);
         if (rule == null) {
             return;
         }

@@ -168,4 +168,20 @@ public interface GatewayBuilderPort {
      * Configure an SSL/TLS context provider for HTTPS/TLS termination.
      */
     GatewayBuilderPort sslContext(hexacloud.core.ports.SslContextPort sslContextPort);
+
+    /**
+     * Delegate authentication to an external HTTP service (auth_request pattern).
+     * The auth service must return 2xx to allow, 401/403 to deny.
+     *
+     * @param authServiceUrl Full URL of the auth endpoint (e.g., "http://auth:9000/verify").
+     */
+    GatewayBuilderPort authService(String authServiceUrl);
+
+    /**
+     * Delegate authentication to an external HTTP service with a custom timeout.
+     *
+     * @param authServiceUrl Full URL of the auth endpoint.
+     * @param timeoutMs      Request timeout in milliseconds.
+     */
+    GatewayBuilderPort authService(String authServiceUrl, int timeoutMs);
 }
