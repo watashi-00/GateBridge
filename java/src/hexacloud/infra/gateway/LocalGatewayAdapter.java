@@ -345,6 +345,19 @@ class LocalGatewayAdapter implements GatewayBuilderPort, RunningGatewayPort {
     }
 
     @Override
+    public LocalGatewayAdapter authService(String authServiceUrl) {
+        return authService(authServiceUrl, 3000);
+    }
+
+    @Override
+    public LocalGatewayAdapter authService(String authServiceUrl, int timeoutMs) {
+        if (authServiceUrl == null || authServiceUrl.trim().isEmpty()) {
+            throw new IllegalArgumentException("authServiceUrl must not be null or empty");
+        }
+        return registerFilter(new hexacloud.core.server.filter.builtin.ExternalAuthFilter(authServiceUrl, timeoutMs));
+    }
+
+    @Override
     public LocalGatewayAdapter rateLimit(int requests, int durationSeconds) {
         requireActiveCluster().setRateLimit(requests, durationSeconds);
         return this;
