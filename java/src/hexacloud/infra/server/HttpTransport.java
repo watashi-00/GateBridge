@@ -58,18 +58,20 @@ public class HttpTransport implements ServerTransport {
     private final List<HttpFilter> activeFilters = new CopyOnWriteArrayList<>();
     private hexacloud.core.ports.SslContextPort sslContextPort;
 
-    private void rebuildFilters(Cluster cluster, List<HttpFilter> customFilters) {
+    private void rebuildFilters(List<Cluster> clusters, List<HttpFilter> customFilters) {
         activeFilters.clear();
-        if (cluster != null) {
-            String allowedIps = cluster.getAllowedIps();
-            if (allowedIps != null && !allowedIps.trim().isEmpty()) {
-                activeFilters.add(new IpRestrictionFilter(cluster));
-            }
-            if (cluster.getRateLimitRequests() > 0 && cluster.getRateLimitDurationSeconds() > 0) {
-                activeFilters.add(new RateLimitFilter(cluster));
-            }
-            if (cluster.isRequireToken()) {
-                activeFilters.add(new TokenAuthFilter(cluster));
+        if (clusters != null) {
+            for (Cluster cluster : clusters) {
+                String allowedIps = cluster.getAllowedIps();
+                if (allowedIps != null && !allowedIps.trim().isEmpty()) {
+                    activeFilters.add(new IpRestrictionFilter(cluster));
+                }
+                if (cluster.getRateLimitRequests() > 0 && cluster.getRateLimitDurationSeconds() > 0) {
+                    activeFilters.add(new RateLimitFilter(cluster));
+                }
+                if (cluster.isRequireToken()) {
+                    activeFilters.add(new TokenAuthFilter(cluster));
+                }
             }
         }
         activeFilters.addAll(customFilters);
@@ -94,9 +96,9 @@ public class HttpTransport implements ServerTransport {
     }
 
     @Override
-    public void listen(int port, RouteRegistry registry, Cluster cluster, List<HttpFilter> customFilters) {
+    public void listen(int port, RouteRegistry registry, List<Cluster> clusters, List<HttpFilter> customFilters) {
         try {
-            rebuildFilters(cluster, customFilters);
+            rebuildFilters(clusters, customFilters);
             DebugUtils.log("HTTP Transport (JDK) starting on port " + port + " with profile: " + performanceProfile);
             if (sslContextPort != null && sslContextPort.isSslEnabled()) {
                 com.sun.net.httpserver.HttpsServer httpsServer = com.sun.net.httpserver.HttpsServer.create(
@@ -266,7 +268,9 @@ public class HttpTransport implements ServerTransport {
 
                                     List<ServerNode> activeNodes = targetCluster.getCluster().stream()
                                             .peek(node -> System.out.println("Node: " + node))
-                                            .filter(n -> n != null && n.status() == NodeStatus.ONLINE && !n.telemetryOnly())
+                                            .filter(n -> n != null && n.status() == NodeStatus.ONLINE && !n.telemetryOnly()
+                                                      && (n.routingProtocol() == hexacloud.core.model.RoutingProtocol.HTTP
+                                                       || n.routingProtocol() == hexacloud.core.model.RoutingProtocol.GRPC))
                                             .collect(Collectors.toList());
 
                                     if (activeNodes.isEmpty()) {

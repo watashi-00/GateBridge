@@ -56,15 +56,17 @@ public class L4RoutingTest {
         testCluster = new Cluster("l4-test-cluster");
         testCluster.setRoutingMode(Cluster.RoutingMode.HYBRID);
 
-        ServerNode node1 = new ServerNode("node-1", "http://127.0.0.1", backendPort1, NodeStatus.ONLINE, false);
-        ServerNode node2 = new ServerNode("node-2", "http://127.0.0.1", backendPort2, NodeStatus.ONLINE, false);
+        ServerNode node1 = new ServerNode("node-1", "http://127.0.0.1", backendPort1, NodeStatus.ONLINE, false)
+                .withRoutingProtocol(hexacloud.core.model.RoutingProtocol.TCP);
+        ServerNode node2 = new ServerNode("node-2", "http://127.0.0.1", backendPort2, NodeStatus.ONLINE, false)
+                .withRoutingProtocol(hexacloud.core.model.RoutingProtocol.TCP);
 
         testCluster.registerServer(node1);
         testCluster.registerServer(node2);
 
         // Start TcpProxyTransport
         transport = new TcpProxyTransport();
-        transport.listen(proxyPort, new RouteRegistry(), testCluster, new ArrayList<>());
+        transport.listen(proxyPort, new RouteRegistry(), java.util.List.of(testCluster), new ArrayList<>());
 
         waitUntilRunning(transport);
     }

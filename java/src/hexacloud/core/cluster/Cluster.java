@@ -111,7 +111,7 @@ public class Cluster {
 
             ServerNode validNode = new ServerNode(
                 node.name(), host, node.port(), node.status(), node.isExternal(),
-                node.pingProtocol(), node.pingPath(), node.pingHeaderName(), node.pingHeaderValue(), node.isDynamic(), node.telemetryOnly()
+                node.pingProtocol(), node.pingPath(), node.pingHeaderName(), node.pingHeaderValue(), node.isDynamic(), node.telemetryOnly(), node.routingProtocol()
             );
             addClusterNode(validNode);
         } finally {
@@ -133,7 +133,7 @@ public class Cluster {
 
             ServerNode validNode = new ServerNode(
                 node.name(), host, node.port(), node.status(), node.isExternal(),
-                node.pingProtocol(), node.pingPath(), node.pingHeaderName(), node.pingHeaderValue(), node.isDynamic(), node.telemetryOnly()
+                node.pingProtocol(), node.pingPath(), node.pingHeaderName(), node.pingHeaderValue(), node.isDynamic(), node.telemetryOnly(), node.routingProtocol()
             );
             addClusterNode(validNode);
         } finally {

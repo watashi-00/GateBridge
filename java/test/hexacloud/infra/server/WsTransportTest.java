@@ -25,7 +25,7 @@ public class WsTransportTest {
     public void testWebSocketHandshakeAndEventStream() throws Exception {
         int port = findFreePort();
         WsTransport transport = new WsTransport();
-        transport.listen(port, new RouteRegistry(), new Cluster("ws-test-cluster"), new java.util.ArrayList<>());
+        transport.listen(port, new RouteRegistry(), java.util.List.of(new Cluster("ws-test-cluster")), new java.util.ArrayList<>());
 
         waitUntilRunning(transport);
 

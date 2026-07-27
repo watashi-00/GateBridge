@@ -106,7 +106,7 @@ public class L7RoutingTest {
         });
 
         transport = new HttpTransport();
-        transport.listen(gatewayPort, registry, testCluster, new ArrayList<>());
+        transport.listen(gatewayPort, registry, java.util.List.of(testCluster), new ArrayList<>());
 
         waitUntilRunning(transport);
     }

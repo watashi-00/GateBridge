@@ -164,7 +164,7 @@ class LocalGatewayAdapter implements GatewayBuilderPort, RunningGatewayPort {
 
     private void ensureServerManagerInitialized() {
         if(this.serverManager == null) {
-            this.serverManager = new ServerManager(getCluster(), this.clusterEventManager);
+            this.serverManager = new ServerManager(getClusters(), this.clusterEventManager);
             this.serverManager.setHttpEngine(this.httpEngine);
             this.serverManager.setPerformanceProfile(this.performanceProfile);
             this.serverManager.enableTcpProxy(this.tcpProxyEnabled);

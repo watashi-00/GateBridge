@@ -58,19 +58,22 @@ public class UndertowHttpTransport implements ServerTransport {
     private hexacloud.core.server.PerformanceProfile performanceProfile = hexacloud.core.server.PerformanceProfile.STANDARD;
     private final List<HttpFilter> activeFilters = new CopyOnWriteArrayList<>();
     private hexacloud.core.ports.SslContextPort sslContextPort;
+    private List<Cluster> activeClusters = new java.util.ArrayList<>();
 
-    private void rebuildFilters(Cluster cluster, List<HttpFilter> customFilters) {
+    private void rebuildFilters(List<Cluster> clusters, List<HttpFilter> customFilters) {
         activeFilters.clear();
-        if (cluster != null) {
-            String allowedIps = cluster.getAllowedIps();
-            if (allowedIps != null && !allowedIps.trim().isEmpty()) {
-                activeFilters.add(new IpRestrictionFilter(cluster));
-            }
-            if (cluster.getRateLimitRequests() > 0 && cluster.getRateLimitDurationSeconds() > 0) {
-                activeFilters.add(new RateLimitFilter(cluster));
-            }
-            if (cluster.isRequireToken()) {
-                activeFilters.add(new TokenAuthFilter(cluster));
+        if (clusters != null) {
+            for (Cluster cluster : clusters) {
+                String allowedIps = cluster.getAllowedIps();
+                if (allowedIps != null && !allowedIps.trim().isEmpty()) {
+                    activeFilters.add(new IpRestrictionFilter(cluster));
+                }
+                if (cluster.getRateLimitRequests() > 0 && cluster.getRateLimitDurationSeconds() > 0) {
+                    activeFilters.add(new RateLimitFilter(cluster));
+                }
+                if (cluster.isRequireToken()) {
+                    activeFilters.add(new TokenAuthFilter(cluster));
+                }
             }
         }
         activeFilters.addAll(customFilters);
@@ -95,9 +98,10 @@ public class UndertowHttpTransport implements ServerTransport {
     }
 
     @Override
-    public void listen(int port, RouteRegistry registry, Cluster cluster, List<HttpFilter> customFilters) {
+    public void listen(int port, RouteRegistry registry, List<Cluster> clusters, List<HttpFilter> customFilters) {
         try {
-            rebuildFilters(cluster, customFilters);
+            this.activeClusters = clusters != null ? clusters : new java.util.ArrayList<>();
+            rebuildFilters(clusters, customFilters);
             // Configure Default ByteBuffer Pool to avoid pool starvation under high concurrency
             io.undertow.connector.ByteBufferPool bufferPool = new io.undertow.server.DefaultByteBufferPool(
                     true, 
@@ -167,7 +171,7 @@ public class UndertowHttpTransport implements ServerTransport {
                                      });
                                  }
                                  if (fastRouteInfo.handler != null) {
-                                     processRequest(exchange, registry, cluster, customFilters);
+                                     processRequest(exchange, registry, activeClusters, customFilters);
                                      return;
                                  }
                              }
@@ -176,14 +180,14 @@ public class UndertowHttpTransport implements ServerTransport {
                                  java.util.concurrent.Executor executor = exchange.getConnection().getWorker();
                                  exchange.dispatch(executor, () -> {
                                      try {
-                                         processRequest(exchange, registry, cluster, customFilters);
+                                         processRequest(exchange, registry, activeClusters, customFilters);
                                      } catch (Exception e) {
                                          handleError(exchange, e);
                                      }
                                  });
                                  return;
                              }
-                             processRequest(exchange, registry, cluster, customFilters);
+                             processRequest(exchange, registry, activeClusters, customFilters);
                          }
                      })
                      .build();
@@ -196,7 +200,7 @@ public class UndertowHttpTransport implements ServerTransport {
          }
      }
 
-     private void processRequest(HttpServerExchange exchange, RouteRegistry registry, Cluster cluster, List<HttpFilter> customFilters) {
+     private void processRequest(HttpServerExchange exchange, RouteRegistry registry, List<Cluster> clusters, List<HttpFilter> customFilters) {
          // Set CORS headers
          exchange.getResponseHeaders().put(CORS_ALLOW_ORIGIN, "*");
          exchange.getResponseHeaders().put(CORS_ALLOW_METHODS, "GET, POST, OPTIONS, PUT, DELETE");
