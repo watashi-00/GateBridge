@@ -1,9 +1,5 @@
 package hexacloud.infra.server;
 
-import com.sun.net.httpserver.HttpExchange;
-import com.sun.net.httpserver.HttpHandler;
-import com.sun.net.httpserver.HttpServer;
-
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -15,6 +11,10 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiConsumer;
 import java.util.stream.Collectors;
+
+import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpHandler;
+import com.sun.net.httpserver.HttpServer;
 
 import hexacloud.core.cluster.Cluster;
 import hexacloud.core.cluster.ClusterRegistry;
@@ -41,6 +41,24 @@ import hexacloud.infra.server.filter.HttpResponseImpl;
  * and using virtual threads for routing and rate-limiting incoming traffic.
  * Supports Layer 7 Reverse-Proxy load balancing and passive telemetry extraction.
  */
+// TODO[]1: create a rebuildFilter to a single cluster.
+// TODO[]2: make this dinamically to rebuild on new clusters created on runtime
+//TODO[]3: add support for HTTP/2 and HTTP/1, dinamically change the HTTP version using ServerNode protocol. gRPC = HTTP/2; !gRPC = HTTP/1
+//TODO[]4: remove completelly the default route GET_NODES_JSON
+//TODO[]5: abtract all listen to new methods
+//TODO[]6: refactor all matching route to more readable version and dinamically.
+// TODO[]7: Extract CORS configuration logic into a dedicated HttpFilter (e.g., CorsFilter) instead of hardcoding it at the top of the handler.
+// TODO[]8: Replace manual string manipulation ("/v1/", "/clusters/") with a dedicated 'Router' or 'PathResolver' component. Routes should be resolved using exact templates (e.g., /clusters/{id}/nodes).
+// TODO[]9: Implement strict URI normalization before routing to prevent Path Traversal vulnerabilities (remove double slashes '//', resolve '..').
+// TODO[]10: Unify the "Fast-path" execution. Ensure all requests, even direct custom routes, pass through the FilterChain to maintain security and consistency.
+// TODO[]11: Extract the Reverse Proxy logic (HttpRequest builder, header copying, and stream forwarding) into a separate class (e.g., ReverseProxyService).
+// TODO[]12: Move the Round-Robin index state and node selection logic into the Cluster class or a dedicated LoadBalancerStrategy. Remove 'roundRobinIndices' from the transport layer.
+// TODO[]13: Extract the Passive Telemetry extraction into a separate service that decodes response headers, decoupling it from the main routing handler.
+// TODO[]14: Eliminate Magic Strings (e.g., "X-Telemetry-CPU", "X-Cluster-Token"). Move them to an 'HttpConstants' class or Enums.
+// TODO[]15: Parameterize the HttpClient timeout (currently hardcoded to 5000ms) to use the cluster's specific timeout configuration.
+// TODO[]16: Implement a GlobalExceptionHandler to replace the generic 500 catch block, allowing it to return properly formatted JSON if the client requested 'application/json'.
+// TODO[]17: Make CORS configurable for all routes.
+// TODO[]18: Make connectionTimeout configurable.
 public class HttpTransport implements ServerTransport {
 
     private HttpServer server;
@@ -49,7 +67,7 @@ public class HttpTransport implements ServerTransport {
     private static final java.util.concurrent.ConcurrentLinkedQueue<byte[]> BUFFER_POOL = new java.util.concurrent.ConcurrentLinkedQueue<>();
     private final ConcurrentHashMap<String, RouteHandlerInfo> routeCache = new ConcurrentHashMap<>();
     private final java.net.http.HttpClient httpClient = java.net.http.HttpClient.newBuilder()
-            .version(java.net.http.HttpClient.Version.HTTP_2)
+            .version(java.net.http.HttpClient.Version.HTTP_1_1)
             .connectTimeout(java.time.Duration.ofMillis(5000))
             .executor(ThreadManager.newVirtualThreadPool())
             .build();
@@ -57,6 +75,7 @@ public class HttpTransport implements ServerTransport {
     private hexacloud.core.server.PerformanceProfile performanceProfile = hexacloud.core.server.PerformanceProfile.STANDARD;
     private final List<HttpFilter> activeFilters = new CopyOnWriteArrayList<>();
     private hexacloud.core.ports.SslContextPort sslContextPort;
+
 
     private void rebuildFilters(List<Cluster> clusters, List<HttpFilter> customFilters) {
         activeFilters.clear();
@@ -334,6 +353,8 @@ public class HttpTransport implements ServerTransport {
                                         respCode = proxyResponse.statusCode();
                                     } catch (Exception ex) {
                                         respCode = 502;
+                                        System.err.println("Error on proxy " + targetUrlStr);
+                                        ex.printStackTrace();
                                     }
 
                                     long latencyMs = System.currentTimeMillis() - startTime;
@@ -377,7 +398,7 @@ public class HttpTransport implements ServerTransport {
                                                 buf = new byte[8192];
                                             }
                                             try (InputStream in = proxyResponse.body();
-                                                 OutputStream os = exchange.getResponseBody()) {
+                                                OutputStream os = exchange.getResponseBody()) {
                                                 int len;
                                                 while ((len = in.read(buf)) != -1) {
                                                     os.write(buf, 0, len);
@@ -451,7 +472,7 @@ public class HttpTransport implements ServerTransport {
                         try {
                             exchange.sendResponseHeaders(500, 0);
                             try (OutputStream os = exchange.getResponseBody();
-                                 PrintWriter out = new PrintWriter(os, true)) {
+                                PrintWriter out = new PrintWriter(os, true)) {
                                 out.println("500 Internal Server Error - Execution failure: " + e.getMessage());
                             }
                         } catch (Exception ignored) {}
