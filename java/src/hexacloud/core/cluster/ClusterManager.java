@@ -63,8 +63,8 @@ public class ClusterManager implements ClusterListener, ClusterOperations {
 	}
 
     @Override
-	public ClusterManager deregisterServer(String fullHost) {
-        this.cluster.deregisterServer(fullHost);
+	public ClusterManager deregisterServer(String nodeId) {
+        this.cluster.deregisterServer(nodeId);
         return this;
 	}
 
@@ -89,9 +89,8 @@ public class ClusterManager implements ClusterListener, ClusterOperations {
                     statusEvent.nodeId(),
                     "Node status changed: " + statusEvent.nodeId() + " -> " + statusEvent.status()
                 );
-                // statusEvent.host() == node.getFullHost(), which is the actual map key.
-                // statusEvent.nodeId() is the node name and must NOT be used as a lookup key.
-                this.cluster.updateStatusServer(statusEvent.host(), statusEvent.status());
+                // statusEvent.nodeId() is the stable node identity and the map key.
+                this.cluster.updateStatusServer(statusEvent.nodeId(), statusEvent.status());
             }
         });
     }

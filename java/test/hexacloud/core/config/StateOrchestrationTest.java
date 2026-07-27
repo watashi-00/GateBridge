@@ -59,7 +59,7 @@ public class StateOrchestrationTest {
         assertEquals(2, cluster.getCluster().size());
         
         // 2. User deletes node A remotely (simulated)
-        gateway.deregisterServer("http://localhost:7001");
+        gateway.deregisterServer("node-a");
         assertEquals(1, cluster.getCluster().size());
         
         // Stops gateway

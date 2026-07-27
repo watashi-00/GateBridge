@@ -131,7 +131,7 @@ public class L4RoutingTest {
     public void testNoActiveNodes() throws Exception {
         // Set all nodes offline
         for (ServerNode node : testCluster.getCluster()) {
-            testCluster.updateStatusServer(node.getFullHost(), NodeStatus.OFFLINE);
+            testCluster.updateStatusServer(node.getId(), NodeStatus.OFFLINE);
         }
 
         // Try connecting to proxy

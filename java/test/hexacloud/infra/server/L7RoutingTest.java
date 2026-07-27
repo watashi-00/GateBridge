@@ -196,7 +196,7 @@ public class L7RoutingTest {
     public void testNoActiveNodesServiceUnavailable() throws Exception {
         // Set all nodes offline
         for (ServerNode node : testCluster.getCluster()) {
-            testCluster.updateStatusServer(node.getFullHost(), NodeStatus.OFFLINE);
+            testCluster.updateStatusServer(node.getId(), NodeStatus.OFFLINE);
         }
 
         String urlStr = "http://127.0.0.1:" + gatewayPort + "/clusters/l7-test-cluster/api/data";

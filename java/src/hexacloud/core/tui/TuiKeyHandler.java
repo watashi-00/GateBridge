@@ -223,7 +223,7 @@ public class TuiKeyHandler {
         Cluster c = ClusterRegistry.getInstance().getCluster(state.selectedClusterName);
         if (c != null && !state.nodes.isEmpty()) {
             ServerNode node = state.nodes.get(state.selectedNodeIndex);
-            c.deregisterServer(node.getFullHost());
+            c.deregisterServer(node.getId());
             tui.fetchNodeStatus();
             state.selectedNodeIndex = 0;
         }
