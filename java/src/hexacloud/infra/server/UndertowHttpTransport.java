@@ -377,13 +377,33 @@ public class UndertowHttpTransport implements ServerTransport {
                         if (reqHeaders != null) {
                             for (Map.Entry<String, List<String>> entry : reqHeaders.entrySet()) {
                                 String hName = entry.getKey();
-                                if (hName == null || hName.equalsIgnoreCase("Host") || hName.equalsIgnoreCase("Content-Length") || hName.equalsIgnoreCase("Connection") || hName.equalsIgnoreCase("Upgrade")) {
+                                if (hName == null || hName.equalsIgnoreCase("Host") || hName.equalsIgnoreCase("Content-Length") || hName.equalsIgnoreCase("Connection") || hName.equalsIgnoreCase("Upgrade") || hName.equalsIgnoreCase("X-Forwarded-For") || hName.equalsIgnoreCase("X-Forwarded-Proto") || hName.equalsIgnoreCase("X-Forwarded-Host")) {
                                     continue;
                                 }
                                 for (String val : entry.getValue()) {
                                     reqBuilder.header(hName, val);
                                 }
                             }
+                        }
+
+                        // Inject X-Forwarded-For
+                        String clientIp = r.getClientIp();
+                        String existingXff = r.getHeader("X-Forwarded-For");
+                        String xff = (existingXff == null || existingXff.trim().isEmpty()) ? clientIp : (existingXff + ", " + clientIp);
+                        reqBuilder.header("X-Forwarded-For", xff);
+
+                        // Inject X-Forwarded-Proto
+                        String proto = exchange.getRequestScheme().equalsIgnoreCase("https") ? "https" : "http";
+                        String existingProto = r.getHeader("X-Forwarded-Proto");
+                        if (existingProto != null && !existingProto.trim().isEmpty()) {
+                            proto = existingProto;
+                        }
+                        reqBuilder.header("X-Forwarded-Proto", proto);
+
+                        // Inject X-Forwarded-Host
+                        String originalHost = r.getHeader("Host");
+                        if (originalHost != null && !originalHost.trim().isEmpty()) {
+                            reqBuilder.header("X-Forwarded-Host", originalHost);
                         }
 
                         // Forward body if present
