@@ -24,9 +24,18 @@ TerminalUiFactory.createTui("DevOps Control Plane")
     .clusterManagementEnabled(true)     // Enable [C] key to create clusters
     .nodeManagementEnabled(true)        // Enable [A]/[D] to register/deregister nodes
     .nodeConfigurationEnabled(true)     // Enable [Enter] config of ping routes & headers
+    .redirectSystemOut(false)           // If true, redirects System.out/System.err to TUI log panel
     .seedGateway(hexacloud)             // Inject already started gateway instance
     .startToggleMode();                 // Start in non-blocking toggle/detachable mode
 ```
+
+*   **`readOnly(boolean)`** — Restricts write actions inside the console.
+*   **`gatewayManagementEnabled(boolean)`** — Enables manually starting/stopping gateway listeners.
+*   **`clusterManagementEnabled(boolean)`** — Enables cluster creation.
+*   **`nodeManagementEnabled(boolean)`** — Enables registering/deregistering service nodes.
+*   **`nodeConfigurationEnabled(boolean)`** — Enables updating route/ping header settings.
+*   **`redirectSystemOut(boolean)`** — Sets whether standard output (`System.out` and `System.err`) is hijacked and redirected to the dashboard's log pane (defaults to `false` for embedded library usage, `true` for standalone executables).
+*   **`seedGateway(RunningGatewayPort)`** — Seeds the console with a pre-configured gateway.
 
 ## Non-Blocking Detachable Mode (`startToggleMode`)
 
