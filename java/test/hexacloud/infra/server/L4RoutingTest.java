@@ -169,35 +169,41 @@ public class L4RoutingTest {
         @SuppressWarnings("unchecked")
         java.util.concurrent.ConcurrentLinkedQueue<byte[]> pool =
                 (java.util.concurrent.ConcurrentLinkedQueue<byte[]>) poolField.get(null);
-        pool.clear();
 
         java.lang.reflect.Field sizeField = TcpProxyTransport.class.getDeclaredField("POOL_SIZE");
         sizeField.setAccessible(true);
         java.util.concurrent.atomic.AtomicInteger poolSize = (java.util.concurrent.atomic.AtomicInteger) sizeField.get(null);
 
-        java.lang.reflect.Field maxField = TcpProxyTransport.class.getDeclaredField("MAX_POOL_SIZE");
-        maxField.setAccessible(true);
-        int maxPoolSize = maxField.getInt(null);
-        assertEquals(512, maxPoolSize, "MAX_POOL_SIZE must be 512");
+        try {
+            pool.clear();
 
-        java.lang.reflect.Method tunnelMethod = TcpProxyTransport.class.getDeclaredMethod(
-                "tunnel",
-                java.io.InputStream.class,
-                java.io.OutputStream.class,
-                Socket.class,
-                Socket.class
-        );
-        tunnelMethod.setAccessible(true);
+            java.lang.reflect.Field maxField = TcpProxyTransport.class.getDeclaredField("MAX_POOL_SIZE");
+            maxField.setAccessible(true);
+            int maxPoolSize = maxField.getInt(null);
+            assertEquals(512, maxPoolSize, "MAX_POOL_SIZE must be 512");
 
-        pool.clear();
-        poolSize.set(512);
+            java.lang.reflect.Method tunnelMethod = TcpProxyTransport.class.getDeclaredMethod(
+                    "tunnel",
+                    java.io.InputStream.class,
+                    java.io.OutputStream.class,
+                    Socket.class,
+                    Socket.class
+            );
+            tunnelMethod.setAccessible(true);
 
-        java.io.ByteArrayInputStream in = new java.io.ByteArrayInputStream(new byte[0]);
-        java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
-        tunnelMethod.invoke(transport, in, out, null, null);
+            pool.clear();
+            poolSize.set(512);
 
-        assertEquals(0, pool.size(), "BUFFER_POOL size should remain 0");
-        assertEquals(512, poolSize.get(), "POOL_SIZE should remain 512");
+            java.io.ByteArrayInputStream in = new java.io.ByteArrayInputStream(new byte[0]);
+            java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+            tunnelMethod.invoke(transport, in, out, null, null);
+
+            assertEquals(0, pool.size(), "BUFFER_POOL size should remain 0");
+            assertEquals(512, poolSize.get(), "POOL_SIZE should remain 512");
+        } finally {
+            poolSize.set(0);
+            pool.clear();
+        }
     }
 
     private String sendTcpMessage(String host, int port, String message) throws Exception {
