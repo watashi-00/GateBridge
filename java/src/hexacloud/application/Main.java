@@ -85,6 +85,7 @@ public class Main {
         // Launch the DevOps Panel in non-blocking toggle mode (detach/reattach with ENTER)
         TerminalUiFactory.createTui("MyCompany - GateBridge DevOps Panel")
             .seedGateway(runningGateway)
+            .redirectSystemOut(true)
             .startToggleMode();
     }
 
