@@ -124,6 +124,10 @@ public class TerminalUI implements hexacloud.core.ports.TerminalUiPort {
         return nodeConfigurationEnabled;
     }
 
+    public boolean redirectSystemOut() {
+        return redirectSystemOut;
+    }
+
     @Override
     public boolean tokenManagementEnabled() {
         return tokenManagementEnabled;
