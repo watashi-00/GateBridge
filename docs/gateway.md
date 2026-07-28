@@ -18,13 +18,15 @@ GatewayBuilderPort builder = GatewayFactory.createGateway("gateway-1", "my-clust
 
 This creates a local gateway adapter with a specific gateway name and cluster name, sets the base transport port, and selects transport protocol listeners (including L4 TCP proxy).
 
-## Registering Nodes with NodeBuilder
+### Registering Nodes with NodeBuilder
 
 To support advanced telemetry, authorization, and custom health check paths, GateBridge provides a fluent `NodeBuilder` API:
 
 ```java
 builder.registerNode("node-1", "http://localhost", 3005)
     .pingProtocol(PingProtocol.HTTP)
+    .routingProtocol(RoutingProtocol.HTTP)
+    .telemetryOnly(false)
     .pingPath("/healthz")
     .pingHeader("Authorization", "Bearer token123")
     .register();
@@ -32,6 +34,8 @@ builder.registerNode("node-1", "http://localhost", 3005)
 
 *   **`registerNode(name, host, port)`** — Specifies the node name, host target, and socket port.
 *   **`pingProtocol(PingProtocol)`** — Toggles and configures the active health check protocol (`HTTP`, `WEBSOCKET`, `TCP`, `UDP`, `GRPC`, or `NONE` for Push-only).
+*   **`routingProtocol(RoutingProtocol)`** — Selects the routing engine protocol for this node (`HTTP`, `TCP`, `GRPC`).
+*   **`telemetryOnly(boolean)`** — Flags the node as a passive telemetry-only node. If `true`, the node is ignored during reverse proxy load-balancing routing, but telemetry collection remains active.
 *   **`pingPath(path)`** — Changes the URI path for active health check requests.
 *   **`pingHeader(name, value)`** — Appends custom authentication headers to ping checks.
 
@@ -40,6 +44,18 @@ For simpler registrations, you can still register a node quickly:
 ```java
 builder.registerServer(3001, NodeStatus.OFFLINE);
 ```
+
+## Ingress Route Rules
+
+GateBridge supports Nginx-style virtual host and path-pattern Ingress routing rules to map incoming domain requests to target backend clusters:
+
+```java
+// Map requests with Host "app.local" and paths starting with "/api/" to "api-cluster"
+RouteRule apiRule = new RouteRule("app.local", "/api/*", "api-cluster");
+builder.addRouteRule(apiRule);
+```
+
+On incoming requests, GateBridge matches the `Host` header and the request URI path against registered `RouteRule` models. Precedence is given to local server API paths to prevent wildcard rules from shadowing core endpoints.
 
 ## State Persistence Layer
 
@@ -68,6 +84,12 @@ The optional `event` parameter dispatches a `ClusterEvent.NodeEventSubmitted` ev
 
 Refer to [Ping Health-Check Contracts](ping-api-contract.md) for full details.
 
+## API Versioning & Auth Bypass
+
+Internal framework telemetry and management endpoints are exposed under the `/v1/` URI prefix (e.g., `/v1/clusters`).
+- **Path Normalization**: Incoming request paths are automatically normalized to strip the `/v1/` prefix before routing.
+- **Authentication Bypass**: In `TokenAuthFilter`, normalized public endpoints mapped under `/v1/` (such as ping endpoints or telemetry push hooks) bypass authentication verification if configured as public.
+
 ## Cluster Routing Modes
 
 Clusters can be configured in one of three routing modes to explicitly define behavior:
@@ -85,19 +107,22 @@ cluster.setRoutingMode(Cluster.RoutingMode.HYBRID);
 
 ## Layer 7 HTTP Reverse Proxy Load-Balancer
 
-When a cluster is in `LOAD_BALANCER_ONLY` or `HYBRID` mode, any incoming HTTP request targeting the REST server on path `/clusters/{clusterName}/{path}` will be proxied:
-1.  GateBridge selects an active node using thread-safe, overflow-safe Round-Robin.
+When a cluster is in `LOAD_BALANCER_ONLY` or `HYBRID` mode, any incoming HTTP request targeting the REST server on path `/clusters/{clusterName}/{path}` (or matched via `RouteRule`) will be proxied:
+1.  GateBridge filters out `telemetryOnly` nodes and inactive offline nodes, then selects an active node using thread-safe, overflow-safe Round-Robin.
 2.  The request method, headers, and body are forwarded to the selected node's backend address.
-3.  The response body is streamed back using chunked transfer encoding (`Transfer-Encoding: chunked`) to prevent JVM heap OOMs.
-4.  Connection latency is measured passively, and CPU/RAM parameters are extracted from response headers (`X-Telemetry-CPU`, `X-Telemetry-RAM`) to update node state.
-5.  If target node connection fails, the client receives a `502 Bad Gateway` response.
+3.  **Traceability Headers**: Auto-injects `X-Forwarded-For` (appending client IP to any existing list), `X-Forwarded-Proto` (the scheme of the client connection), and `X-Forwarded-Host` (original target Host) headers.
+4.  The response body is streamed back using chunked transfer encoding (`Transfer-Encoding: chunked`) to prevent JVM heap OOMs.
+5.  Connection latency is measured passively, and CPU/RAM parameters are extracted from response headers (`X-Telemetry-CPU`, `X-Telemetry-RAM`) to update node state.
+6.  If target node connection fails, the client receives a `502 Bad Gateway` response.
 
 ## Layer 4 TCP Proxy Tunneling Load-Balancer
 
 When enabled via `.enableTcpProxy(true)`, GateBridge starts a raw Layer 4 TCP proxy on `basePort + 3`:
 *   Spawns virtual threads (`ThreadManager.startVirtual`) to tunnel data bidirectionally between client and backend node.
-*   Uses Round-Robin node selection to distribute raw TCP streams.
-*   Handles TCP half-close sequences natively via output shutdown, preserving active tunnels while ensuring clean socket closure upon termination.
+*   Uses Round-Robin node selection, ignoring `telemetryOnly` nodes, to distribute raw TCP streams.
+*   **Socket Configurations**: Exposes `tcpSoTimeout(int)` and `tcpKeepAlive(boolean)` configurations on `GatewayBuilderPort` to govern proxy sockets.
+*   **Dual-Socket Teardown**: Ensures that a close or timeout on either side of the bidirectional tunnel immediately shuts down both sockets, releasing socket file descriptors instantly.
+*   **Bounded Buffer Pool**: Limits buffer allocation memory footprint using a bounded `BUFFER_POOL` capped at `MAX_POOL_SIZE = 512` cached `8KB` byte arrays, managed via thread-safe atomic size tracking.
 *   Connection latency is passively tracked and updated in the telemetry dashboard.
 
 ## Complete Bootstrap Example
@@ -110,14 +135,21 @@ GatewayBuilderPort builder = GatewayFactory.createGateway("gateway-1", "producti
     .enableTelnet(true)
     .enableHttp(true)
     .enableWs(true)
-    .enableTcpProxy(true); // Enables L4 TCP Proxy load-balancing
+    .enableTcpProxy(true) // Enables L4 TCP Proxy load-balancing
+    .tcpSoTimeout(30000)   // Sets socket timeout to 30s
+    .tcpKeepAlive(true);  // Enables TCP keep-alive pings
 
 // Configure routing mode
 builder.getCluster().setRoutingMode(Cluster.RoutingMode.HYBRID);
 
+// Define Ingress mapping rule
+builder.addRouteRule(new RouteRule("service.company.internal", "/users/*", "production-cluster"));
+
 // Register node with name, host, and port
 builder.registerNode("node-a", "http://localhost", 3001)
     .pingProtocol(PingProtocol.HTTP)
+    .routingProtocol(RoutingProtocol.HTTP)
+    .telemetryOnly(false)
     .pingPath("/health")
     .pingHeader("X-Token", "secret")
     .register();
