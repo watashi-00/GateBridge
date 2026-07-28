@@ -189,19 +189,15 @@ public class L4RoutingTest {
         );
         tunnelMethod.setAccessible(true);
 
-        // Pre-fill pool and poolSize to 512
-        for (int i = 0; i < 512; i++) {
-            pool.offer(new byte[8192]);
-        }
+        pool.clear();
         poolSize.set(512);
 
-        // Run tunnel with a new buffer when pool is already full at 512
         java.io.ByteArrayInputStream in = new java.io.ByteArrayInputStream(new byte[0]);
         java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
         tunnelMethod.invoke(transport, in, out, null, null);
 
-        assertTrue(pool.size() <= 512, "BUFFER_POOL size should be capped at 512, but was " + pool.size());
-        assertTrue(poolSize.get() <= 512, "POOL_SIZE should be capped at 512, but was " + poolSize.get());
+        assertEquals(0, pool.size(), "BUFFER_POOL size should remain 0");
+        assertEquals(512, poolSize.get(), "POOL_SIZE should remain 512");
     }
 
     private String sendTcpMessage(String host, int port, String message) throws Exception {

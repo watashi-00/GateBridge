@@ -190,9 +190,10 @@ public class TcpProxyTransport implements ServerTransport {
             }
         } catch (IOException ignored) {
         } finally {
-            if (POOL_SIZE.get() < MAX_POOL_SIZE) {
+            if (POOL_SIZE.incrementAndGet() <= MAX_POOL_SIZE) {
                 BUFFER_POOL.offer(buffer);
-                POOL_SIZE.incrementAndGet();
+            } else {
+                POOL_SIZE.decrementAndGet();
             }
             closeQuietly(inSocket);
             closeQuietly(outSocket);
