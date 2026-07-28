@@ -35,6 +35,8 @@ public class ServerManager implements ServerOperations {
     private hexacloud.core.server.HttpEngine httpEngine = hexacloud.core.server.HttpEngine.JDK_DEFAULT;
     private hexacloud.core.server.PerformanceProfile performanceProfile = hexacloud.core.server.PerformanceProfile.STANDARD;
     private hexacloud.core.ports.SslContextPort sslContextPort;
+    private int tcpSoTimeout = 30000;
+    private boolean tcpKeepAlive = true;
 
     /**
      * Primary constructor accepting all clusters. Used by LocalGatewayAdapter.
@@ -121,6 +123,16 @@ public class ServerManager implements ServerOperations {
     public ServerManager enableTcpProxy(boolean enabled) {
         this.tcpProxyEnabled = enabled;
         DebugUtils.log("ServerManager: TCP Proxy transport " + (enabled ? "AUTHORIZED" : "DISABLED"));
+        return this;
+    }
+
+    public ServerManager tcpSoTimeout(int timeoutMs) {
+        this.tcpSoTimeout = timeoutMs;
+        return this;
+    }
+
+    public ServerManager tcpKeepAlive(boolean enabled) {
+        this.tcpKeepAlive = enabled;
         return this;
     }
 
@@ -215,7 +227,9 @@ public class ServerManager implements ServerOperations {
         }
 
         if(tcpProxyEnabled) {
-            ServerTransport tcpProxy = new TcpProxyTransport();
+            TcpProxyTransport tcpProxy = new TcpProxyTransport();
+            tcpProxy.setSoTimeout(this.tcpSoTimeout);
+            tcpProxy.setKeepAlive(this.tcpKeepAlive);
             // TCP Proxy runs on port + 3
             tcpProxy.listen(port + 3, routeRegistry, clusters, customFilters);
             activeTransports.add(tcpProxy);
