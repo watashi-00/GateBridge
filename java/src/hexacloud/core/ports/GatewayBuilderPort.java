@@ -165,6 +165,17 @@ public interface GatewayBuilderPort {
     GatewayBuilderPort enableTcpProxy(boolean enabled);
 
     /**
+     * Configure L4 TCP proxy socket timeout.
+     */
+    GatewayBuilderPort tcpSoTimeout(int timeoutMs);
+
+    /**
+     * Configure L4 TCP proxy socket keep-alive.
+     */
+    GatewayBuilderPort tcpKeepAlive(boolean enabled);
+
+
+    /**
      * Configure an SSL/TLS context provider for HTTPS/TLS termination.
      */
     GatewayBuilderPort sslContext(hexacloud.core.ports.SslContextPort sslContextPort);

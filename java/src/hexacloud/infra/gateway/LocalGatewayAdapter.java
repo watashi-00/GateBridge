@@ -35,6 +35,8 @@ class LocalGatewayAdapter implements GatewayBuilderPort, RunningGatewayPort {
     private hexacloud.core.server.HttpEngine httpEngine = hexacloud.core.server.HttpEngine.JDK_DEFAULT;
     private hexacloud.core.server.PerformanceProfile performanceProfile = hexacloud.core.server.PerformanceProfile.STANDARD;
     private hexacloud.core.ports.SslContextPort sslContextPort;
+    private int tcpSoTimeout = 30000;
+    private boolean tcpKeepAlive = true;
 
     public LocalGatewayAdapter(String gatewayName) {
         DebugUtils.log("Creating LocalGatewayAdapter for gateway: " + gatewayName);
@@ -168,6 +170,8 @@ class LocalGatewayAdapter implements GatewayBuilderPort, RunningGatewayPort {
             this.serverManager.setHttpEngine(this.httpEngine);
             this.serverManager.setPerformanceProfile(this.performanceProfile);
             this.serverManager.enableTcpProxy(this.tcpProxyEnabled);
+            this.serverManager.tcpSoTimeout(this.tcpSoTimeout);
+            this.serverManager.tcpKeepAlive(this.tcpKeepAlive);
         }
     }
 
@@ -454,6 +458,22 @@ class LocalGatewayAdapter implements GatewayBuilderPort, RunningGatewayPort {
         this.tcpProxyEnabled = enabled;
         ensureServerManagerInitialized();
         this.serverManager.enableTcpProxy(enabled);
+        return this;
+    }
+
+    @Override
+    public LocalGatewayAdapter tcpSoTimeout(int timeoutMs) {
+        this.tcpSoTimeout = timeoutMs;
+        ensureServerManagerInitialized();
+        this.serverManager.tcpSoTimeout(timeoutMs);
+        return this;
+    }
+
+    @Override
+    public LocalGatewayAdapter tcpKeepAlive(boolean enabled) {
+        this.tcpKeepAlive = enabled;
+        ensureServerManagerInitialized();
+        this.serverManager.tcpKeepAlive(enabled);
         return this;
     }
 

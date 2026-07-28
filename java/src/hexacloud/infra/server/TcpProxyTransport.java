@@ -35,10 +35,24 @@ public class TcpProxyTransport implements ServerTransport {
     private final Set<Socket> activeSockets = ConcurrentHashMap.newKeySet();
     private static final java.util.concurrent.ConcurrentLinkedQueue<byte[]> BUFFER_POOL = new java.util.concurrent.ConcurrentLinkedQueue<>();
 
+    private int tcpSoTimeout = 30000;
+    private boolean tcpKeepAlive = true;
+
+    public void setSoTimeout(int timeoutMs) {
+        this.tcpSoTimeout = timeoutMs;
+    }
+
+    public void setKeepAlive(boolean enabled) {
+        this.tcpKeepAlive = enabled;
+    }
+
     private void configureSocket(Socket socket) {
         try {
             socket.setTcpNoDelay(true);
-            socket.setKeepAlive(true);
+            socket.setKeepAlive(tcpKeepAlive);
+            if (tcpSoTimeout > 0) {
+                socket.setSoTimeout(tcpSoTimeout);
+            }
             socket.setReceiveBufferSize(65536);
             socket.setSendBufferSize(65536);
         } catch (Exception ignored) {}
@@ -135,8 +149,8 @@ public class TcpProxyTransport implements ServerTransport {
             OutputStream nodeOut = finalNodeSocket.getOutputStream();
 
             // Bidirectional tunneling using virtual threads
-            Thread t1 = ThreadManager.startVirtual("TcpProxy-ClientToNode", () -> tunnel(clientIn, nodeOut, finalNodeSocket));
-            Thread t2 = ThreadManager.startVirtual("TcpProxy-NodeToClient", () -> tunnel(nodeIn, clientOut, clientSocket));
+            Thread t1 = ThreadManager.startVirtual("TcpProxy-ClientToNode", () -> tunnel(clientIn, nodeOut, clientSocket, finalNodeSocket));
+            Thread t2 = ThreadManager.startVirtual("TcpProxy-NodeToClient", () -> tunnel(nodeIn, clientOut, finalNodeSocket, clientSocket));
 
             // Wait for both tunneling threads to finish so cleanup can unregister active sockets
             try {
@@ -159,7 +173,7 @@ public class TcpProxyTransport implements ServerTransport {
         }
     }
 
-    private void tunnel(InputStream in, OutputStream out, Socket outSocket) {
+    private void tunnel(InputStream in, OutputStream out, Socket inSocket, Socket outSocket) {
         byte[] buffer = BUFFER_POOL.poll();
         if (buffer == null) {
             buffer = new byte[8192];
@@ -173,11 +187,8 @@ public class TcpProxyTransport implements ServerTransport {
         } catch (IOException ignored) {
         } finally {
             BUFFER_POOL.offer(buffer);
-            try {
-                if (outSocket != null && !outSocket.isClosed() && !outSocket.isOutputShutdown()) {
-                    outSocket.shutdownOutput();
-                }
-            } catch (IOException ignored) {}
+            closeQuietly(inSocket);
+            closeQuietly(outSocket);
         }
     }
 
