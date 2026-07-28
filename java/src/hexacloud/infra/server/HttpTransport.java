@@ -33,6 +33,7 @@ import hexacloud.core.server.route.RouteRegistry;
 import hexacloud.core.server.route.RouteRule;
 import hexacloud.core.utils.common.DebugUtils;
 import hexacloud.core.utils.concurrent.ThreadManager;
+import hexacloud.core.utils.network.HttpHeaderUtils;
 import hexacloud.infra.server.filter.HttpRequestImpl;
 import hexacloud.infra.server.filter.HttpResponseImpl;
 
@@ -333,29 +334,9 @@ public class HttpTransport implements ServerTransport {
                                         }
                                     }
 
-                                    // Inject X-Forwarded-For
-                                    String clientIp = r.getClientIp();
-                                    String existingXff = r.getHeader("X-Forwarded-For");
-                                    String xff = (existingXff == null || existingXff.trim().isEmpty()) ? clientIp : (existingXff + ", " + clientIp);
-                                    reqBuilder.header("X-Forwarded-For", xff);
-
-                                    // Inject X-Forwarded-Proto
-                                    String proto = "http";
-                                    if (exchange instanceof com.sun.net.httpserver.HttpsExchange) {
-                                        proto = "https";
-                                    } else {
-                                        String existingProto = r.getHeader("X-Forwarded-Proto");
-                                        if (existingProto != null && !existingProto.trim().isEmpty()) {
-                                            proto = existingProto;
-                                        }
-                                    }
-                                    reqBuilder.header("X-Forwarded-Proto", proto);
-
-                                    // Inject X-Forwarded-Host
-                                    String originalHost = r.getHeader("Host");
-                                    if (originalHost != null && !originalHost.trim().isEmpty()) {
-                                        reqBuilder.header("X-Forwarded-Host", originalHost);
-                                    }
+                                    // Inject traceability headers
+                                    boolean isSsl = exchange instanceof com.sun.net.httpserver.HttpsExchange;
+                                    HttpHeaderUtils.injectTraceabilityHeaders(reqBuilder, r, isSsl);
 
                                     // Forward request body if present
                                     String method = r.getMethod();
