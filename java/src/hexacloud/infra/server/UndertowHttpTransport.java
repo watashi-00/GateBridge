@@ -22,6 +22,7 @@ import hexacloud.core.server.filter.builtin.RateLimitFilter;
 import hexacloud.core.server.filter.builtin.TokenAuthFilter;
 import hexacloud.core.utils.common.DebugUtils;
 import hexacloud.core.utils.concurrent.ThreadManager;
+import hexacloud.core.utils.network.HttpHeaderUtils;
 import hexacloud.core.server.filter.HttpFilterChainImpl;
 
 import java.io.InputStream;
@@ -386,25 +387,9 @@ public class UndertowHttpTransport implements ServerTransport {
                             }
                         }
 
-                        // Inject X-Forwarded-For
-                        String clientIp = r.getClientIp();
-                        String existingXff = r.getHeader("X-Forwarded-For");
-                        String xff = (existingXff == null || existingXff.trim().isEmpty()) ? clientIp : (existingXff + ", " + clientIp);
-                        reqBuilder.header("X-Forwarded-For", xff);
-
-                        // Inject X-Forwarded-Proto
-                        String proto = exchange.getRequestScheme().equalsIgnoreCase("https") ? "https" : "http";
-                        String existingProto = r.getHeader("X-Forwarded-Proto");
-                        if (existingProto != null && !existingProto.trim().isEmpty()) {
-                            proto = existingProto;
-                        }
-                        reqBuilder.header("X-Forwarded-Proto", proto);
-
-                        // Inject X-Forwarded-Host
-                        String originalHost = r.getHeader("Host");
-                        if (originalHost != null && !originalHost.trim().isEmpty()) {
-                            reqBuilder.header("X-Forwarded-Host", originalHost);
-                        }
+                        // Inject traceability headers
+                        boolean isSsl = exchange.getRequestScheme().equalsIgnoreCase("https");
+                        HttpHeaderUtils.injectTraceabilityHeaders(reqBuilder, r, isSsl);
 
                         // Forward body if present
                         String method = r.getMethod();
