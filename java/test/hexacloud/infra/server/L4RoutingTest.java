@@ -162,6 +162,48 @@ public class L4RoutingTest {
         manager.stop();
     }
 
+    @Test
+    public void testBoundedBufferPool() throws Exception {
+        java.lang.reflect.Field poolField = TcpProxyTransport.class.getDeclaredField("BUFFER_POOL");
+        poolField.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        java.util.concurrent.ConcurrentLinkedQueue<byte[]> pool =
+                (java.util.concurrent.ConcurrentLinkedQueue<byte[]>) poolField.get(null);
+        pool.clear();
+
+        java.lang.reflect.Field sizeField = TcpProxyTransport.class.getDeclaredField("POOL_SIZE");
+        sizeField.setAccessible(true);
+        java.util.concurrent.atomic.AtomicInteger poolSize = (java.util.concurrent.atomic.AtomicInteger) sizeField.get(null);
+
+        java.lang.reflect.Field maxField = TcpProxyTransport.class.getDeclaredField("MAX_POOL_SIZE");
+        maxField.setAccessible(true);
+        int maxPoolSize = maxField.getInt(null);
+        assertEquals(512, maxPoolSize, "MAX_POOL_SIZE must be 512");
+
+        java.lang.reflect.Method tunnelMethod = TcpProxyTransport.class.getDeclaredMethod(
+                "tunnel",
+                java.io.InputStream.class,
+                java.io.OutputStream.class,
+                Socket.class,
+                Socket.class
+        );
+        tunnelMethod.setAccessible(true);
+
+        // Pre-fill pool and poolSize to 512
+        for (int i = 0; i < 512; i++) {
+            pool.offer(new byte[8192]);
+        }
+        poolSize.set(512);
+
+        // Run tunnel with a new buffer when pool is already full at 512
+        java.io.ByteArrayInputStream in = new java.io.ByteArrayInputStream(new byte[0]);
+        java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+        tunnelMethod.invoke(transport, in, out, null, null);
+
+        assertTrue(pool.size() <= 512, "BUFFER_POOL size should be capped at 512, but was " + pool.size());
+        assertTrue(poolSize.get() <= 512, "POOL_SIZE should be capped at 512, but was " + poolSize.get());
+    }
+
     private String sendTcpMessage(String host, int port, String message) throws Exception {
         try (Socket socket = new Socket(host, port)) {
             socket.setSoTimeout(3000);

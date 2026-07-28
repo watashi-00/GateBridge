@@ -33,6 +33,8 @@ public class TcpProxyTransport implements ServerTransport {
     private volatile boolean active = true;
     private final AtomicInteger roundRobinIndex = new AtomicInteger(0);
     private final Set<Socket> activeSockets = ConcurrentHashMap.newKeySet();
+    private static final int MAX_POOL_SIZE = 512;
+    private static final java.util.concurrent.atomic.AtomicInteger POOL_SIZE = new java.util.concurrent.atomic.AtomicInteger(0);
     private static final java.util.concurrent.ConcurrentLinkedQueue<byte[]> BUFFER_POOL = new java.util.concurrent.ConcurrentLinkedQueue<>();
 
     private int tcpSoTimeout = 30000;
@@ -175,7 +177,9 @@ public class TcpProxyTransport implements ServerTransport {
 
     private void tunnel(InputStream in, OutputStream out, Socket inSocket, Socket outSocket) {
         byte[] buffer = BUFFER_POOL.poll();
-        if (buffer == null) {
+        if (buffer != null) {
+            POOL_SIZE.decrementAndGet();
+        } else {
             buffer = new byte[8192];
         }
         try {
@@ -186,7 +190,10 @@ public class TcpProxyTransport implements ServerTransport {
             }
         } catch (IOException ignored) {
         } finally {
-            BUFFER_POOL.offer(buffer);
+            if (POOL_SIZE.get() < MAX_POOL_SIZE) {
+                BUFFER_POOL.offer(buffer);
+                POOL_SIZE.incrementAndGet();
+            }
             closeQuietly(inSocket);
             closeQuietly(outSocket);
         }
