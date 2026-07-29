@@ -14,16 +14,54 @@ public class JdkHttpProxyClient implements HttpProxyClient {
 
     public JdkHttpProxyClient() {
         this.client = HttpClient.newBuilder()
+                .version(HttpClient.Version.HTTP_1_1)
                 .connectTimeout(Duration.ofSeconds(10))
                 .followRedirects(HttpClient.Redirect.NEVER)
+                .executor(java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor())
                 .build();
     }
 
     @Override
     public ProxyResponse execute(String targetUrl, String method, Map<String, List<String>> headers, InputStream body, int timeoutMs) throws Exception {
-        HttpRequest.BodyPublisher publisher = body == null 
-                ? HttpRequest.BodyPublishers.noBody() 
-                : HttpRequest.BodyPublishers.ofInputStream(() -> body);
+        boolean hasBody = false;
+        if (headers != null) {
+            List<String> contentLengths = headers.get("Content-Length");
+            if (contentLengths == null || contentLengths.isEmpty()) {
+                // Try case-insensitive lookup
+                for (Map.Entry<String, List<String>> entry : headers.entrySet()) {
+                    if ("Content-Length".equalsIgnoreCase(entry.getKey())) {
+                        contentLengths = entry.getValue();
+                        break;
+                    }
+                }
+            }
+            if (contentLengths != null && !contentLengths.isEmpty()) {
+                try {
+                    long len = Long.parseLong(contentLengths.get(0).trim());
+                    hasBody = len > 0;
+                } catch (Exception ignored) {}
+            } else {
+                List<String> transferEncodings = headers.get("Transfer-Encoding");
+                if (transferEncodings == null || transferEncodings.isEmpty()) {
+                    for (Map.Entry<String, List<String>> entry : headers.entrySet()) {
+                        if ("Transfer-Encoding".equalsIgnoreCase(entry.getKey())) {
+                            transferEncodings = entry.getValue();
+                            break;
+                        }
+                    }
+                }
+                if (transferEncodings != null && !transferEncodings.isEmpty()) {
+                    hasBody = true;
+                }
+            }
+        }
+        if (!hasBody) {
+            hasBody = "POST".equalsIgnoreCase(method) || "PUT".equalsIgnoreCase(method) || "PATCH".equalsIgnoreCase(method);
+        }
+
+        HttpRequest.BodyPublisher publisher = (hasBody && body != null)
+                ? HttpRequest.BodyPublishers.ofInputStream(() -> body)
+                : HttpRequest.BodyPublishers.noBody();
 
         HttpRequest.Builder builder = HttpRequest.newBuilder()
                 .uri(URI.create(targetUrl))
