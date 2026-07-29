@@ -44,6 +44,11 @@ public class ReverseProxyService {
         long startTime = System.currentTimeMillis();
 
         String targetUrl = targetNode.getFullHost() + (subpath.startsWith("/") ? subpath : "/" + subpath);
+        if (targetUrl.startsWith("http://localhost")) {
+            targetUrl = targetUrl.replaceFirst("http://localhost", "http://127.0.0.1");
+        } else if (targetUrl.startsWith("https://localhost")) {
+            targetUrl = targetUrl.replaceFirst("https://localhost", "https://127.0.0.1");
+        }
         String query = req.getQuery();
         if (query != null && !query.isEmpty()) {
             targetUrl += "?" + query;
@@ -67,7 +72,8 @@ public class ReverseProxyService {
         try (InputStream bodyIn = req.getBody()) {
             ProxyResponse response = proxyClient.execute(targetUrl, req.getMethod(), headers, bodyIn, timeoutMs);
             
-            long latencyMs = System.currentTimeMillis() - startTime;
+            long startTimeForTelemetry = System.currentTimeMillis();
+            long latencyMs = startTimeForTelemetry - startTime;
             
             // Passive Telemetry extraction
             Double cpuVal = parseHeaderDouble(response.headers(), "X-Telemetry-CPU", "X-Node-CPU");
@@ -83,7 +89,11 @@ public class ReverseProxyService {
             // Forward headers
             for (Map.Entry<String, List<String>> entry : response.headers().entrySet()) {
                 String key = entry.getKey();
-                if (key == null || key.equalsIgnoreCase("Transfer-Encoding") || key.equalsIgnoreCase("Content-Length")) {
+                if (key == null || key.equalsIgnoreCase("Transfer-Encoding") 
+                        || key.equalsIgnoreCase("Connection") 
+                        || key.equalsIgnoreCase("Keep-Alive") 
+                        || key.equalsIgnoreCase("Upgrade")
+                        || key.equalsIgnoreCase("Proxy-Connection")) {
                     continue;
                 }
                 for (String val : entry.getValue()) {
