@@ -126,6 +126,18 @@ public class UndertowHttpTransport implements ServerTransport {
             builder.setHandler(new HttpHandler() {
                 @Override
                 public void handleRequest(HttpServerExchange exchange) throws Exception {
+                    String path = exchange.getRequestPath();
+                    String matchingPath = path.startsWith("/v1/") ? path.substring(3) : (path.equals("/v1") ? "/" : path);
+                    
+                    RouteResolution resolution = PathResolver.resolve(matchingPath, exchange.getRequestHeaders().getFirst(io.undertow.util.Headers.HOST), registry);
+                    boolean canUseFastPath = resolution.isLocal() 
+                            && (activeFilters.isEmpty() || (activeFilters.size() == 1 && activeFilters.get(0) instanceof CorsFilter));
+
+                    if (canUseFastPath) {
+                        processRequest(exchange, registry);
+                        return;
+                    }
+
                     if (exchange.isInIoThread()) {
                         exchange.dispatch(virtualExecutor, () -> {
                             try {
@@ -152,9 +164,46 @@ public class UndertowHttpTransport implements ServerTransport {
     private void processRequest(HttpServerExchange exchange, RouteRegistry registry) {
         try {
             UndertowHttpRequestImpl req = new UndertowHttpRequestImpl(exchange);
-            UndertowHttpResponseImpl res = new UndertowHttpResponseImpl(exchange);
-
             RouteResolution resolution = PathResolver.resolve(req.getPath(), req.getHeader("Host"), registry);
+
+            boolean canUseFastPath = resolution.isLocal() 
+                    && (activeFilters.isEmpty() || (activeFilters.size() == 1 && activeFilters.get(0) instanceof CorsFilter));
+
+            if (canUseFastPath) {
+                // Set CORS headers directly
+                exchange.getResponseHeaders().put(io.undertow.util.HttpString.tryFromString("Access-Control-Allow-Origin"), "*");
+                exchange.getResponseHeaders().put(io.undertow.util.HttpString.tryFromString("Access-Control-Allow-Methods"), "GET, POST, OPTIONS, PUT, DELETE");
+                exchange.getResponseHeaders().put(io.undertow.util.HttpString.tryFromString("Access-Control-Allow-Headers"), "X-Cluster-Token, Content-Type, Authorization");
+
+                if (io.undertow.util.Methods.OPTIONS.equals(exchange.getRequestMethod())) {
+                    exchange.setStatusCode(204);
+                    exchange.endExchange();
+                    return;
+                }
+
+                BiConsumer<String, PrintWriter> handler = registry.getRoutes().get(resolution.localRouteName());
+                if (handler != null) {
+                    if (resolution.localRouteName().equals("/V1/GET_NODES_JSON")) {
+                        exchange.getResponseHeaders().put(io.undertow.util.Headers.CONTENT_TYPE, "application/json");
+                    } else {
+                        exchange.getResponseHeaders().put(io.undertow.util.Headers.CONTENT_TYPE, "text/plain");
+                    }
+                    exchange.setStatusCode(200);
+
+                    FastPrintWriter out = FAST_WRITER.get();
+                    out.reset();
+                    String query = req.getQuery();
+                    String args = query != null ? query : "";
+                    handler.accept(args, out);
+
+                    byte[] responseBytes = out.toBytes();
+                    exchange.getResponseHeaders().put(io.undertow.util.Headers.CONTENT_LENGTH, String.valueOf(responseBytes.length));
+                    exchange.getResponseSender().send(java.nio.ByteBuffer.wrap(responseBytes));
+                    return;
+                }
+            }
+
+            UndertowHttpResponseImpl res = new UndertowHttpResponseImpl(exchange);
 
             BiConsumer<HttpRequest, HttpResponse> routeHandler = (r, s) -> {
                 try {
@@ -240,5 +289,62 @@ public class UndertowHttpTransport implements ServerTransport {
     @Override
     public boolean isRunning() {
         return running;
+    }
+
+    private static final ThreadLocal<FastPrintWriter> FAST_WRITER = ThreadLocal.withInitial(FastPrintWriter::new);
+
+    private static class FastPrintWriter extends java.io.PrintWriter {
+        private static class StringBuilderWriter extends java.io.Writer {
+            final StringBuilder sb = new StringBuilder(512);
+
+            @Override
+            public void write(char[] cbuf, int off, int len) {
+                sb.append(cbuf, off, len);
+            }
+
+            @Override
+            public void write(String str, int off, int len) {
+                sb.append(str, off, off + len);
+            }
+
+            @Override
+            public void write(int c) {
+                sb.append((char)c);
+            }
+
+            @Override
+            public void flush() {}
+
+            @Override
+            public void close() {}
+
+            void reset() {
+                sb.setLength(0);
+            }
+
+            byte[] toBytes() {
+                return sb.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            }
+        }
+
+        private final StringBuilderWriter sbw;
+
+        public FastPrintWriter() {
+            this(new StringBuilderWriter());
+        }
+
+        private FastPrintWriter(StringBuilderWriter sbw) {
+            super(sbw);
+            this.sbw = sbw;
+        }
+
+        public void reset() {
+            sbw.reset();
+            clearError();
+        }
+
+        public byte[] toBytes() {
+            return sbw.toBytes();
+        }
     }
 }
