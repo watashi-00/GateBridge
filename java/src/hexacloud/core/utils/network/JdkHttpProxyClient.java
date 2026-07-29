@@ -33,13 +33,23 @@ public class JdkHttpProxyClient implements HttpProxyClient {
         if (headers != null) {
             for (Map.Entry<String, List<String>> entry : headers.entrySet()) {
                 String key = entry.getKey();
-                if (key == null || key.equalsIgnoreCase("Host") || key.equalsIgnoreCase("Content-Length") || key.equalsIgnoreCase("Connection")) {
+                if (key == null || key.equalsIgnoreCase("Host") || key.equalsIgnoreCase("Content-Length") 
+                        || key.equalsIgnoreCase("Connection") || key.equalsIgnoreCase("Upgrade")
+                        || key.equalsIgnoreCase("Transfer-Encoding") || key.equalsIgnoreCase("Keep-Alive")
+                        || key.equalsIgnoreCase("Proxy-Connection")) {
                     continue;
                 }
-                for (String val : entry.getValue()) {
-                    if (val != null) {
-                        builder.header(key, val);
-                    }
+                if (key.equalsIgnoreCase("X-Forwarded-For")) {
+                    key = "X-Forwarded-For";
+                } else if (key.equalsIgnoreCase("X-Forwarded-Host")) {
+                    key = "X-Forwarded-Host";
+                } else if (key.equalsIgnoreCase("X-Forwarded-Proto")) {
+                    key = "X-Forwarded-Proto";
+                } else if (key.equalsIgnoreCase("Content-Type")) {
+                    key = "Content-Type";
+                }
+                if (!entry.getValue().isEmpty()) {
+                    builder.header(key, String.join(", ", entry.getValue()));
                 }
             }
         }

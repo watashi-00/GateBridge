@@ -26,11 +26,22 @@ public class ReverseProxyService {
     }
 
     public void proxyRequest(HttpRequest req, HttpResponse res, Cluster targetCluster, String subpath, int timeoutMs) {
+        proxyRequest(req, res, targetCluster, subpath, timeoutMs, false);
+    }
+
+    public void proxyRequest(HttpRequest req, HttpResponse res, Cluster targetCluster, String subpath, int timeoutMs, boolean matchedRouteRule) {
+        if (!matchedRouteRule && targetCluster.getRoutingMode() == Cluster.RoutingMode.TELEMETRY_ONLY) {
+            errorHandler.handleStatus(res, 403, "Forbidden - Load balancing is disabled for cluster: " + targetCluster.getClusterName());
+            return;
+        }
+
         ServerNode targetNode = targetCluster.selectNode();
         if (targetNode == null) {
             errorHandler.handleStatus(res, 503, "No active nodes in cluster: " + targetCluster.getClusterName());
             return;
         }
+
+        long startTime = System.currentTimeMillis();
 
         String targetUrl = targetNode.getFullHost() + (subpath.startsWith("/") ? subpath : "/" + subpath);
         String query = req.getQuery();
@@ -38,7 +49,7 @@ public class ReverseProxyService {
             targetUrl += "?" + query;
         }
 
-        Map<String, List<String>> headers = new HashMap<>();
+        Map<String, List<String>> headers = new java.util.TreeMap<>(String.CASE_INSENSITIVE_ORDER);
         if (req.getHeaders() != null) {
             for (Map.Entry<String, List<String>> entry : req.getHeaders().entrySet()) {
                 headers.put(entry.getKey(), new ArrayList<>(entry.getValue()));
@@ -56,6 +67,17 @@ public class ReverseProxyService {
         try (InputStream bodyIn = req.getBody()) {
             ProxyResponse response = proxyClient.execute(targetUrl, req.getMethod(), headers, bodyIn, timeoutMs);
             
+            long latencyMs = System.currentTimeMillis() - startTime;
+            
+            // Passive Telemetry extraction
+            Double cpuVal = parseHeaderDouble(response.headers(), "X-Telemetry-CPU", "X-Node-CPU");
+            Double ramVal = parseHeaderDouble(response.headers(), "X-Telemetry-RAM", "X-Node-RAM");
+            
+            targetCluster.updateTelemetryServer(targetNode.host(), targetNode.port(), cpuVal, ramVal, null, (int) latencyMs, null);
+            if (cpuVal != null) targetNode.setCpuUsage(cpuVal);
+            if (ramVal != null) targetNode.setRamUsage(ramVal);
+            targetNode.setLatencyMs((int) latencyMs);
+
             res.setStatus(response.statusCode());
             
             // Forward headers
@@ -81,5 +103,29 @@ public class ReverseProxyService {
             DebugUtils.error("ReverseProxyService: Proxy request failed to " + targetUrl, e);
             errorHandler.handleException(res, e);
         }
+    }
+
+    private Double parseHeaderDouble(Map<String, List<String>> headers, String... headerNames) {
+        if (headers == null) return null;
+        for (String hName : headerNames) {
+            List<String> vals = headers.get(hName);
+            if (vals == null || vals.isEmpty()) {
+                for (Map.Entry<String, List<String>> entry : headers.entrySet()) {
+                    if (hName.equalsIgnoreCase(entry.getKey())) {
+                        vals = entry.getValue();
+                        break;
+                    }
+                }
+            }
+            if (vals != null && !vals.isEmpty()) {
+                String val = vals.get(0);
+                if (val != null && !val.trim().isEmpty()) {
+                    try {
+                        return Double.parseDouble(val.replace("%", "").trim());
+                    } catch (NumberFormatException ignored) {}
+                }
+            }
+        }
+        return null;
     }
 }
