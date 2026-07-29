@@ -301,9 +301,6 @@ public class Cluster {
             if (latencyMs != null) updated.setLatencyMs(latencyMs);
 
             this.cluster.put(targetKey, updated);
-            if (!batchMode) {
-                ClusterStatePersistence.saveState();
-            }
             return new NodeUpdateResult(updated.getFullHost(), updated.pingProtocol().getFriendlyName(), statusChanged, telemetryUpdated, current.getId());
         } finally {
             lock.unlock();
