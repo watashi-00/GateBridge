@@ -88,7 +88,7 @@ public class UndertowHttpTransport implements ServerTransport {
                     false, 
                     16384, 
                     -1, 
-                    0, 
+                    24, 
                     0
             );
             Undertow.Builder builder = Undertow.builder()
