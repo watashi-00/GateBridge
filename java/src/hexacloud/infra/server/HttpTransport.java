@@ -141,56 +141,29 @@ public class HttpTransport implements ServerTransport {
                                 return;
                             }
                         }
-
                         HttpRequestImpl req = new HttpRequestImpl(exchange);
                         HttpResponseImpl res = new HttpResponseImpl(exchange);
 
                         RouteResolution resolution = PathResolver.resolve(req.getPath(), req.getHeader("Host"), registry);
 
+                        // Inline default CorsFilter optimization
+                        if (activeFilters.size() == 1 && activeFilters.get(0) instanceof CorsFilter) {
+                            res.setHeader("Access-Control-Allow-Origin", "*");
+                            res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS, PUT, DELETE");
+                            res.setHeader("Access-Control-Allow-Headers", "X-Cluster-Token, Content-Type, Authorization");
+
+                            if ("OPTIONS".equalsIgnoreCase(req.getMethod())) {
+                                res.setStatus(204);
+                                return;
+                            }
+
+                            executeRoute(req, res, resolution, registry);
+                            return;
+                        }
+
                         BiConsumer<HttpRequest, HttpResponse> routeHandler = (r, s) -> {
                             try {
-                                if (resolution.isProxy()) {
-                                    Cluster targetCluster = ClusterRegistry.getInstance().getCluster(resolution.targetClusterName());
-                                    if (targetCluster == null) {
-                                        errorHandler.handleStatus(s, 404, "Unknown Cluster: " + resolution.targetClusterName());
-                                        return;
-                                    }
-
-                                    // Check if there is an internal cluster administration route
-                                    RouteRegistry clusterRegistry = targetCluster.getRouteRegistry();
-                                    String clusterRouteKey = resolution.resolveTargetRouteKey();
-                                    if (clusterRegistry != null && clusterRouteKey != null && clusterRegistry.getRoutes().containsKey(clusterRouteKey)) {
-                                        BiConsumer<String, PrintWriter> handler = clusterRegistry.getRoutes().get(clusterRouteKey);
-                                        if (clusterRouteKey.equals("/V1/GET_NODES_JSON")) {
-                                            s.setContentType("application/json");
-                                        } else {
-                                            s.setContentType("text/plain");
-                                        }
-                                        try (PrintWriter out = s.getWriter()) {
-                                            String query = r.getQuery();
-                                            String args = query != null ? query : "";
-                                            handler.accept(args, out);
-                                        }
-                                        return;
-                                    }
-
-                                    reverseProxyService.proxyRequest(r, s, targetCluster, resolution.targetSubpath(), targetCluster.getTimeoutMs(), resolution.matchedRouteRule());
-
-                                } else if (resolution.isLocal()) {
-                                    BiConsumer<String, PrintWriter> handler = registry.getRoutes().get(resolution.localRouteName());
-                                    if (resolution.localRouteName().equals("/V1/GET_NODES_JSON")) {
-                                        s.setContentType("application/json");
-                                    } else {
-                                        s.setContentType("text/plain");
-                                    }
-                                    try (PrintWriter out = s.getWriter()) {
-                                        String query = r.getQuery();
-                                        String args = query != null ? query : "";
-                                        handler.accept(args, out);
-                                    }
-                                } else {
-                                    errorHandler.handleStatus(s, 404, "Unknown Route: " + r.getPath());
-                                }
+                                executeRoute(r, s, resolution, registry);
                             } catch (Exception e) {
                                 throw new RuntimeException(e);
                             }
@@ -214,6 +187,51 @@ public class HttpTransport implements ServerTransport {
         } catch (Exception e) {
             DebugUtils.error("HttpTransport: Failed to start HTTP server on port " + port, e);
             throw new RuntimeException("HttpTransport start failed", e);
+        }
+    }
+
+    private void executeRoute(HttpRequest r, HttpResponse s, RouteResolution resolution, RouteRegistry registry) throws Exception {
+        if (resolution.isProxy()) {
+            Cluster targetCluster = ClusterRegistry.getInstance().getCluster(resolution.targetClusterName());
+            if (targetCluster == null) {
+                errorHandler.handleStatus(s, 404, "Unknown Cluster: " + resolution.targetClusterName());
+                return;
+            }
+
+            // Check if there is an internal cluster administration route
+            RouteRegistry clusterRegistry = targetCluster.getRouteRegistry();
+            String clusterRouteKey = resolution.resolveTargetRouteKey();
+            if (clusterRegistry != null && clusterRouteKey != null && clusterRegistry.getRoutes().containsKey(clusterRouteKey)) {
+                BiConsumer<String, PrintWriter> handler = clusterRegistry.getRoutes().get(clusterRouteKey);
+                if (clusterRouteKey.equals("/V1/GET_NODES_JSON")) {
+                    s.setContentType("application/json");
+                } else {
+                    s.setContentType("text/plain");
+                }
+                try (PrintWriter out = s.getWriter()) {
+                    String query = r.getQuery();
+                    String args = query != null ? query : "";
+                    handler.accept(args, out);
+                }
+                return;
+            }
+
+            reverseProxyService.proxyRequest(r, s, targetCluster, resolution.targetSubpath(), targetCluster.getTimeoutMs(), resolution.matchedRouteRule());
+
+        } else if (resolution.isLocal()) {
+            BiConsumer<String, PrintWriter> handler = registry.getRoutes().get(resolution.localRouteName());
+            if (resolution.localRouteName().equals("/V1/GET_NODES_JSON")) {
+                s.setContentType("application/json");
+            } else {
+                s.setContentType("text/plain");
+            }
+            try (PrintWriter out = s.getWriter()) {
+                String query = r.getQuery();
+                String args = query != null ? query : "";
+                handler.accept(args, out);
+            }
+        } else {
+            errorHandler.handleStatus(s, 404, "Unknown Route: " + r.getPath());
         }
     }
 
