@@ -20,6 +20,7 @@ import hexacloud.core.server.filter.builtin.TokenAuthFilter;
 import hexacloud.core.server.filter.builtin.CorsFilter;
 import hexacloud.core.server.filter.HttpFilterChainImpl;
 import hexacloud.core.utils.common.DebugUtils;
+import hexacloud.core.utils.concurrent.ThreadManager;
 
 import java.io.PrintWriter;
 import java.util.List;
@@ -30,6 +31,7 @@ public class UndertowHttpTransport implements ServerTransport {
 
     private Undertow server;
     private boolean running = false;
+    private java.util.concurrent.ExecutorService virtualExecutor;
     private final HttpErrorHandler errorHandler = new DefaultHttpErrorHandler();
     private final ReverseProxyService reverseProxyService = new ReverseProxyService(new hexacloud.core.utils.network.JdkHttpProxyClient(), errorHandler);
 
@@ -119,12 +121,13 @@ public class UndertowHttpTransport implements ServerTransport {
                         .setWorkerThreads(Runtime.getRuntime().availableProcessors() * 2);
             }
 
+            virtualExecutor = ThreadManager.newVirtualThreadPool();
+
             builder.setHandler(new HttpHandler() {
                 @Override
                 public void handleRequest(HttpServerExchange exchange) throws Exception {
                     if (exchange.isInIoThread()) {
-                        java.util.concurrent.Executor executor = exchange.getConnection().getWorker();
-                        exchange.dispatch(executor, () -> {
+                        exchange.dispatch(virtualExecutor, () -> {
                             try {
                                 processRequest(exchange, registry);
                             } catch (Exception e) {
@@ -227,6 +230,9 @@ public class UndertowHttpTransport implements ServerTransport {
         if (server != null) {
             server.stop();
             running = false;
+            if (virtualExecutor != null) {
+                virtualExecutor.shutdown();
+            }
             DebugUtils.info("HTTP Transport (Undertow) stopped.");
         }
     }
