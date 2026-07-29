@@ -87,4 +87,58 @@ public class LocalGatewayAdapterTest {
         field.setAccessible(true);
         return fieldType.cast(field.get(target));
     }
+
+    @Test
+    public void testCustomScanPackages() throws Exception {
+        // Positive case: Scan the package where our test classes reside
+        gateway.scanPackages("hexacloud.infra.gateway");
+        gateway.createCluster("test-scan-cluster");
+        gateway.listen();
+
+        TestScanListener.handled = false;
+        gateway.eventManager().dispatch(new TestCustomScanEvent());
+        assertTrue(TestScanListener.handled, "Listener in scanned package should have received the event");
+
+        ServerManager serverManager = readField(gateway, "serverManager", ServerManager.class);
+        RouteRegistry routeRegistry = readField(serverManager, "routeRegistry", RouteRegistry.class);
+        assertTrue(routeRegistry.getRoutes().containsKey("TEST_SCAN_CMD"), "Controller in scanned package should be registered");
+
+        gateway.stop();
+
+        // Negative case: Scan a package that does NOT contain our test classes
+        LocalGatewayAdapter negativeGateway = (LocalGatewayAdapter) GatewayFactory.createGateway("negative-gateway");
+        negativeGateway.scanPackages("hexacloud.core.ports");
+        negativeGateway.createCluster("negative-cluster");
+        negativeGateway.listen();
+
+        TestScanListener.handled = false;
+        negativeGateway.eventManager().dispatch(new TestCustomScanEvent());
+        assertFalse(TestScanListener.handled, "Listener in unscanned package should NOT have received the event");
+
+        ServerManager negServerManager = readField(negativeGateway, "serverManager", ServerManager.class);
+        RouteRegistry negRouteRegistry = readField(negServerManager, "routeRegistry", RouteRegistry.class);
+        assertFalse(negRouteRegistry.getRoutes().containsKey("TEST_SCAN_CMD"), "Controller in unscanned package should NOT be registered");
+
+        negativeGateway.stop();
+    }
+}
+
+class TestCustomScanEvent implements hexacloud.core.event.Event {}
+
+class TestScanListener implements hexacloud.core.event.EventController {
+    public static boolean handled = false;
+
+    @hexacloud.core.event.Subscribe
+    public void onEvent(TestCustomScanEvent event) {
+        handled = true;
+    }
+}
+
+class TestScanController implements hexacloud.core.server.route.RouteController {
+    public TestScanController() {}
+
+    @hexacloud.core.server.route.RouteMapping("TEST_SCAN_CMD")
+    public void handle(String args, java.io.PrintWriter out) {
+        out.println("Scanned!");
+    }
 }

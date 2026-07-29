@@ -29,7 +29,6 @@ public class ClassScanner {
      * @param <T>             the interface/class type
      * @return a list of concrete classes implementing the target interface
      */
-    @SuppressWarnings("unchecked")
     public static <T> List<Class<? extends T>> scanPackage(String packageName, Class<T> targetInterface) {
         List<Class<? extends T>> classes = new ArrayList<>();
         String packagePath = packageName.replace('.', '/');

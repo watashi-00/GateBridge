@@ -48,7 +48,6 @@ public class ServerManager implements ServerOperations {
         for (Cluster cluster : this.clusters) {
             this.routeRegistry.registerController(new ClusterController(cluster));
         }
-        autoRegisterControllers();
     }
 
     /**
@@ -63,42 +62,70 @@ public class ServerManager implements ServerOperations {
         this.port = port;
     }
 
-    private void autoRegisterControllers() {
-        try {
-            List<Class<?>> controllers = hexacloud.core.utils.common.PathUtils.scanClasspathForImplementations(hexacloud.core.server.route.RouteController.class);
-            for (Class<?> clazz : controllers) {
-                if (clazz.getName().equals(ClusterController.class.getName())) {
-                    continue;
-                }
-                
-                try {
-                    hexacloud.core.server.route.RouteController controller = null;
-                    Cluster firstCluster = clusters.isEmpty() ? null : clusters.get(0);
-                    try {
-                        if (firstCluster != null) {
-                            java.lang.reflect.Constructor<?> ctor = clazz.getDeclaredConstructor(Cluster.class);
-                            ctor.setAccessible(true);
-                            controller = (hexacloud.core.server.route.RouteController) ctor.newInstance(firstCluster);
-                        }
-                    } catch (NoSuchMethodException e) {
-                        java.lang.reflect.Constructor<?> ctor = clazz.getDeclaredConstructor();
-                        ctor.setAccessible(true);
-                        controller = (hexacloud.core.server.route.RouteController) ctor.newInstance();
-                    }
+    private String getAppBasePackage() {
+        String command = System.getProperty("sun.java.command");
+        if (command == null || command.trim().isEmpty()) {
+            return "";
+        }
+        String mainClass = command.split(" ")[0];
+        int lastDot = mainClass.lastIndexOf('.');
+        if (lastDot != -1) {
+            return mainClass.substring(0, lastDot);
+        }
+        return "";
+    }
 
-                    if (controller != null) {
-                        this.routeRegistry.registerController(controller);
-                        for (Cluster c : this.clusters) {
-                            c.getRouteRegistry().registerController(controller);
-                        }
-                        DebugUtils.info("RouteScanner: Auto-discovered and registered controller: " + clazz.getName());
-                    }
-                } catch (Exception e) {
-                    DebugUtils.error("RouteScanner: Failed to auto-instantiate controller " + clazz.getName(), e);
-                }
+    public void autoRegisterControllers(List<String> scanPackages) {
+        List<String> packages = new ArrayList<>();
+        if (scanPackages != null) {
+            packages.addAll(scanPackages);
+        }
+        if (packages.isEmpty()) {
+            String basePkg = getAppBasePackage();
+            if (!basePkg.isEmpty()) {
+                packages.add(basePkg);
             }
-        } catch (Exception e) {
-            DebugUtils.error("RouteScanner: Failed to scan classpath for RouteControllers", e);
+            packages.add("hexacloud");
+        }
+
+        for (String pkg : packages) {
+            try {
+                List<Class<? extends hexacloud.core.server.route.RouteController>> controllers =
+                        hexacloud.core.utils.reflection.ClassScanner.scanPackage(pkg, hexacloud.core.server.route.RouteController.class);
+                for (Class<? extends hexacloud.core.server.route.RouteController> clazz : controllers) {
+                    if (clazz.getName().equals(ClusterController.class.getName())) {
+                        continue;
+                    }
+                    
+                    try {
+                        hexacloud.core.server.route.RouteController controller = null;
+                        Cluster firstCluster = clusters.isEmpty() ? null : clusters.get(0);
+                        try {
+                            if (firstCluster != null) {
+                                java.lang.reflect.Constructor<? extends hexacloud.core.server.route.RouteController> ctor = clazz.getDeclaredConstructor(Cluster.class);
+                                ctor.setAccessible(true);
+                                controller = ctor.newInstance(firstCluster);
+                            }
+                        } catch (NoSuchMethodException e) {
+                            java.lang.reflect.Constructor<? extends hexacloud.core.server.route.RouteController> ctor = clazz.getDeclaredConstructor();
+                            ctor.setAccessible(true);
+                            controller = ctor.newInstance();
+                        }
+
+                        if (controller != null) {
+                            this.routeRegistry.registerController(controller);
+                            for (Cluster c : this.clusters) {
+                                c.getRouteRegistry().registerController(controller);
+                            }
+                            DebugUtils.info("RouteScanner: Auto-discovered and registered controller: " + clazz.getName());
+                        }
+                    } catch (Exception e) {
+                        DebugUtils.error("RouteScanner: Failed to auto-instantiate controller " + clazz.getName(), e);
+                    }
+                }
+            } catch (Exception e) {
+                DebugUtils.error("RouteScanner: Failed to scan package " + pkg + " for RouteControllers", e);
+            }
         }
     }
 

@@ -195,4 +195,9 @@ public interface GatewayBuilderPort {
      * @param timeoutMs      Request timeout in milliseconds.
      */
     GatewayBuilderPort authService(String authServiceUrl, int timeoutMs);
+
+    /**
+     * Configure packages to scan for controllers and event listeners.
+     */
+    GatewayBuilderPort scanPackages(String... packages);
 }

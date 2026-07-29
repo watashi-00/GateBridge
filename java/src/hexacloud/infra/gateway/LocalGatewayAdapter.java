@@ -37,11 +37,11 @@ class LocalGatewayAdapter implements GatewayBuilderPort, RunningGatewayPort {
     private hexacloud.core.ports.SslContextPort sslContextPort;
     private int tcpSoTimeout = 30000;
     private boolean tcpKeepAlive = true;
+    private final List<String> scanPackages = new ArrayList<>();
 
     public LocalGatewayAdapter(String gatewayName) {
         DebugUtils.info("Creating LocalGatewayAdapter for gateway: " + gatewayName);
         this.clusterEventManager = new ClusterEventBusManager();
-        autoRegisterEventListeners();
         
         // Load configurations state from file on startup
         ClusterStatePersistence.loadState();
@@ -78,6 +78,18 @@ class LocalGatewayAdapter implements GatewayBuilderPort, RunningGatewayPort {
     @Override
     public LocalGatewayAdapter sslContext(hexacloud.core.ports.SslContextPort sslContextPort) {
         this.sslContextPort = sslContextPort;
+        return this;
+    }
+
+    @Override
+    public LocalGatewayAdapter scanPackages(String... packages) {
+        if (packages != null) {
+            for (String pkg : packages) {
+                if (pkg != null && !pkg.trim().isEmpty()) {
+                    this.scanPackages.add(pkg.trim());
+                }
+            }
+        }
         return this;
     }
 
@@ -175,20 +187,45 @@ class LocalGatewayAdapter implements GatewayBuilderPort, RunningGatewayPort {
         }
     }
 
+    private String getAppBasePackage() {
+        String command = System.getProperty("sun.java.command");
+        if (command == null || command.trim().isEmpty()) {
+            return "";
+        }
+        String mainClass = command.split(" ")[0];
+        int lastDot = mainClass.lastIndexOf('.');
+        if (lastDot != -1) {
+            return mainClass.substring(0, lastDot);
+        }
+        return "";
+    }
+
     private void autoRegisterEventListeners() {
-        try {
-            java.util.List<Class<?>> controllers = hexacloud.core.utils.common.PathUtils.scanClasspathForImplementations(hexacloud.core.event.EventController.class);
-            for (Class<?> clazz : controllers) {
-                try {
-                    hexacloud.core.event.EventController listener = (hexacloud.core.event.EventController) clazz.getDeclaredConstructor().newInstance();
-                    this.clusterEventManager.registerListener(listener);
-                    DebugUtils.info("EventScanner: Auto-discovered and registered listener: " + clazz.getName());
-                } catch (Exception e) {
-                    DebugUtils.error("EventScanner: Failed to auto-instantiate listener " + clazz.getName(), e);
-                }
+        List<String> packages = new ArrayList<>(this.scanPackages);
+        if (packages.isEmpty()) {
+            String basePkg = getAppBasePackage();
+            if (!basePkg.isEmpty()) {
+                packages.add(basePkg);
             }
-        } catch (Exception e) {
-            DebugUtils.error("EventScanner: Failed to scan classpath for EventControllers", e);
+            packages.add("hexacloud");
+        }
+
+        for (String pkg : packages) {
+            try {
+                List<Class<? extends hexacloud.core.event.EventController>> listeners =
+                        hexacloud.core.utils.reflection.ClassScanner.scanPackage(pkg, hexacloud.core.event.EventController.class);
+                for (Class<? extends hexacloud.core.event.EventController> clazz : listeners) {
+                    try {
+                        hexacloud.core.event.EventController listener = clazz.getDeclaredConstructor().newInstance();
+                        this.clusterEventManager.registerListener(listener);
+                        DebugUtils.info("EventScanner: Auto-discovered and registered listener: " + clazz.getName());
+                    } catch (Exception e) {
+                        DebugUtils.error("EventScanner: Failed to auto-instantiate listener " + clazz.getName(), e);
+                    }
+                }
+            } catch (Exception e) {
+                DebugUtils.error("EventScanner: Failed to scan package " + pkg + " for EventControllers", e);
+            }
         }
     }
 
@@ -217,6 +254,8 @@ class LocalGatewayAdapter implements GatewayBuilderPort, RunningGatewayPort {
     public LocalGatewayAdapter listen(int port) {
         this.port = port;
         ensureServerManagerInitialized();
+        autoRegisterEventListeners();
+        this.serverManager.autoRegisterControllers(this.scanPackages);
         this.serverManager.setSslContext(this.sslContextPort);
         for (Cluster cluster : getClusters()) {
             cluster.endBootstrapPhase(); // Transition clusters to runtime
