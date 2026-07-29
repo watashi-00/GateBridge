@@ -43,7 +43,7 @@ public class ServerNode {
         this.isDynamic = isDynamic;
         this.telemetryOnly = telemetryOnly;
         this.routingProtocol = routingProtocol != null ? routingProtocol : RoutingProtocol.HTTP;
-        this.id = name;
+        this.id = name != null && !name.isEmpty() ? name : (host + ":" + port);
     }
 
     /**
