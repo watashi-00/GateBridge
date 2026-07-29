@@ -66,7 +66,7 @@ public class TcpProxyTransport implements ServerTransport {
     }
 
     private void serverListen(int port, List<Cluster> clusters) {
-        DebugUtils.log("TcpProxyTransport starting to listen on port " + port);
+        DebugUtils.info("TcpProxyTransport starting to listen on port " + port);
         try {
             serverSocket = new ServerSocket(port);
             running = true;
@@ -113,7 +113,7 @@ public class TcpProxyTransport implements ServerTransport {
                     .collect(Collectors.toList());
 
             if (activeNodes.isEmpty()) {
-                DebugUtils.log("TcpProxyTransport: No active TCP nodes available.");
+                DebugUtils.info("TcpProxyTransport: No active TCP nodes available.");
                 closeQuietly(clientSocket);
                 return;
             }
@@ -160,7 +160,7 @@ public class TcpProxyTransport implements ServerTransport {
                 t2.join();
             } catch (InterruptedException ie) {
                 Thread.currentThread().interrupt();
-                DebugUtils.log("TcpProxyTransport: Connection handler thread was interrupted.");
+                DebugUtils.info("TcpProxyTransport: Connection handler thread was interrupted.");
             }
 
         } catch (Exception e) {
@@ -223,7 +223,7 @@ public class TcpProxyTransport implements ServerTransport {
             closeQuietly(s);
         }
         activeSockets.clear();
-        DebugUtils.log("TcpProxyTransport stopped.");
+        DebugUtils.info("TcpProxyTransport stopped.");
     }
 
     @Override

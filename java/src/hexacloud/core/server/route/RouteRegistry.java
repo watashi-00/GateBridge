@@ -72,7 +72,7 @@ public class RouteRegistry {
                         };
                     }
                     routes.put(command, handler);
-                    DebugUtils.log("RouteScanner: Registered command '" + command + "' mapping to method " + clazz.getSimpleName() + "." + method.getName());
+                    DebugUtils.info("RouteScanner: Registered command '" + command + "' mapping to method " + clazz.getSimpleName() + "." + method.getName());
                 } else {
                     DebugUtils.error("RouteScanner: Failed to register method " + clazz.getSimpleName() + "." + method.getName() + " -> Must accept parameters (String, PrintWriter)");
                 }

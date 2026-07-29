@@ -119,7 +119,7 @@ public class HttpTransport implements ServerTransport {
     public void listen(int port, RouteRegistry registry, List<Cluster> clusters, List<HttpFilter> customFilters) {
         try {
             rebuildFilters(clusters, customFilters);
-            DebugUtils.log("HTTP Transport (JDK) starting on port " + port + " with profile: " + performanceProfile);
+            DebugUtils.info("HTTP Transport (JDK) starting on port " + port + " with profile: " + performanceProfile);
             if (sslContextPort != null && sslContextPort.isSslEnabled()) {
                 com.sun.net.httpserver.HttpsServer httpsServer = com.sun.net.httpserver.HttpsServer.create(
                     new java.net.InetSocketAddress(port), 2048
@@ -523,7 +523,7 @@ public class HttpTransport implements ServerTransport {
         if(server != null) {
             server.stop(0);
             running = false;
-            DebugUtils.log("HTTP Transport stopped.");
+            DebugUtils.info("HTTP Transport stopped.");
         }
     }
 

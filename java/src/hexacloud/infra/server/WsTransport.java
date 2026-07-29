@@ -247,7 +247,7 @@ public class WsTransport implements ServerTransport {
         }
         closeAllClients();
         threadPool.shutdownNow();
-        DebugUtils.log("WebSocket Transport stopped.");
+        DebugUtils.info("WebSocket Transport stopped.");
     }
 
     private void closeAllClients() {

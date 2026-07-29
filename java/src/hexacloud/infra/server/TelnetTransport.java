@@ -34,14 +34,14 @@ public class TelnetTransport implements ServerTransport {
     }
 
     private void serverListen(int port, RouteRegistry registry, hexacloud.core.cluster.Cluster cluster) {
-        DebugUtils.log("Telnet Transport starting to listen on port " + port);
+        DebugUtils.info("Telnet Transport starting to listen on port " + port);
         try {
             serverSocket = new ServerSocket(port);
             running = true;
             DebugUtils.info("Telnet Transport successfully bound and listening on port " + port);
             while(clusterActive) {
                 Socket socket = serverSocket.accept();
-                DebugUtils.log("Telnet Transport accepted new connection from " + socket.getRemoteSocketAddress());
+                DebugUtils.info("Telnet Transport accepted new connection from " + socket.getRemoteSocketAddress());
                 threadPool.execute(() -> conn(socket, registry, cluster));
             }
         } catch(IOException ex) {
@@ -59,11 +59,11 @@ public class TelnetTransport implements ServerTransport {
 
             String line = in.readLine();
             if(line == null || line.trim().isEmpty()) {
-                DebugUtils.log("Telnet received empty connection request from " + socket.getRemoteSocketAddress());
+                DebugUtils.info("Telnet received empty connection request from " + socket.getRemoteSocketAddress());
                 return;
             }
 
-            DebugUtils.log("Telnet received raw command line: '" + line + "'");
+            DebugUtils.info("Telnet received raw command line: '" + line + "'");
 
             String[] tokens = line.split(" ", 3);
             String command;
@@ -119,9 +119,9 @@ public class TelnetTransport implements ServerTransport {
                 return;
             }
 
-            DebugUtils.log("Telnet: Executing route handler for command '" + command + "' with args '" + args + "'");
+            DebugUtils.info("Telnet: Executing route handler for command '" + command + "' with args '" + args + "'");
             handler.accept(args, out);
-            DebugUtils.log("Telnet: Successfully completed request handler for command '" + command + "'");
+            DebugUtils.info("Telnet: Successfully completed request handler for command '" + command + "'");
             
         } catch(IOException ex) {
             DebugUtils.error("Failed to process request from client", ex);
@@ -146,7 +146,7 @@ public class TelnetTransport implements ServerTransport {
             }
         }
         threadPool.shutdownNow();
-        DebugUtils.log("Telnet Transport stopped.");
+        DebugUtils.info("Telnet Transport stopped.");
     }
 
     @Override

@@ -34,7 +34,7 @@ public class EventBusManager {
         Class<? extends Event> eventType = event.getClass();
         List<EventListener<?>> listeners = channels.get(eventType);
 
-        DebugUtils.log("Dispatching event: " + event);
+        DebugUtils.info("Dispatching event: " + event);
 
         // Run interceptors
         for (EventListener<Event> interceptor : interceptors) {

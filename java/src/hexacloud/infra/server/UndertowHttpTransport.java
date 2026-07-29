@@ -568,7 +568,7 @@ public class UndertowHttpTransport implements ServerTransport {
             server.stop();
             running = false;
             virtualExecutor.shutdown();
-            DebugUtils.log("HTTP Transport (Undertow) stopped.");
+            DebugUtils.info("HTTP Transport (Undertow) stopped.");
         }
     }
 

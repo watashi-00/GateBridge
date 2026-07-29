@@ -91,7 +91,7 @@ public class ServerManager implements ServerOperations {
                         for (Cluster c : this.clusters) {
                             c.getRouteRegistry().registerController(controller);
                         }
-                        DebugUtils.log("RouteScanner: Auto-discovered and registered controller: " + clazz.getName());
+                        DebugUtils.info("RouteScanner: Auto-discovered and registered controller: " + clazz.getName());
                     }
                 } catch (Exception e) {
                     DebugUtils.error("RouteScanner: Failed to auto-instantiate controller " + clazz.getName(), e);
@@ -104,25 +104,25 @@ public class ServerManager implements ServerOperations {
 
     public ServerManager enableTelnet(boolean enabled) {
         this.telnetEnabled = enabled;
-        DebugUtils.log("ServerManager: Telnet transport " + (enabled ? "AUTHORIZED" : "DISABLED"));
+        DebugUtils.info("ServerManager: Telnet transport " + (enabled ? "AUTHORIZED" : "DISABLED"));
         return this;
     }
 
     public ServerManager enableHttp(boolean enabled) {
         this.httpEnabled = enabled;
-        DebugUtils.log("ServerManager: HTTP transport " + (enabled ? "AUTHORIZED" : "DISABLED"));
+        DebugUtils.info("ServerManager: HTTP transport " + (enabled ? "AUTHORIZED" : "DISABLED"));
         return this;
     }
 
     public ServerManager enableWs(boolean enabled) {
         this.wsEnabled = enabled;
-        DebugUtils.log("ServerManager: WebSocket transport " + (enabled ? "AUTHORIZED" : "DISABLED"));
+        DebugUtils.info("ServerManager: WebSocket transport " + (enabled ? "AUTHORIZED" : "DISABLED"));
         return this;
     }
 
     public ServerManager enableTcpProxy(boolean enabled) {
         this.tcpProxyEnabled = enabled;
-        DebugUtils.log("ServerManager: TCP Proxy transport " + (enabled ? "AUTHORIZED" : "DISABLED"));
+        DebugUtils.info("ServerManager: TCP Proxy transport " + (enabled ? "AUTHORIZED" : "DISABLED"));
         return this;
     }
 
@@ -191,7 +191,7 @@ public class ServerManager implements ServerOperations {
 
     @Override
     public ServerManager listen(int port) {
-        DebugUtils.log("ServerManager: Starting authorized protocol listeners on base port " + port + "...");
+        DebugUtils.info("ServerManager: Starting authorized protocol listeners on base port " + port + "...");
         
         // Stop any running transports before starting new ones
         stopTransports();

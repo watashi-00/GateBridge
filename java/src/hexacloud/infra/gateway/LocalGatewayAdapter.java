@@ -39,7 +39,7 @@ class LocalGatewayAdapter implements GatewayBuilderPort, RunningGatewayPort {
     private boolean tcpKeepAlive = true;
 
     public LocalGatewayAdapter(String gatewayName) {
-        DebugUtils.log("Creating LocalGatewayAdapter for gateway: " + gatewayName);
+        DebugUtils.info("Creating LocalGatewayAdapter for gateway: " + gatewayName);
         this.clusterEventManager = new ClusterEventBusManager();
         autoRegisterEventListeners();
         
@@ -182,7 +182,7 @@ class LocalGatewayAdapter implements GatewayBuilderPort, RunningGatewayPort {
                 try {
                     hexacloud.core.event.EventController listener = (hexacloud.core.event.EventController) clazz.getDeclaredConstructor().newInstance();
                     this.clusterEventManager.registerListener(listener);
-                    DebugUtils.log("EventScanner: Auto-discovered and registered listener: " + clazz.getName());
+                    DebugUtils.info("EventScanner: Auto-discovered and registered listener: " + clazz.getName());
                 } catch (Exception e) {
                     DebugUtils.error("EventScanner: Failed to auto-instantiate listener " + clazz.getName(), e);
                 }
@@ -221,7 +221,7 @@ class LocalGatewayAdapter implements GatewayBuilderPort, RunningGatewayPort {
         for (Cluster cluster : getClusters()) {
             cluster.endBootstrapPhase(); // Transition clusters to runtime
         }
-        DebugUtils.log("LocalGatewayAdapter: Starting server listeners on port " + port);
+        DebugUtils.info("LocalGatewayAdapter: Starting server listeners on port " + port);
         this.serverManager.listen(port);
         this.running = true;
 

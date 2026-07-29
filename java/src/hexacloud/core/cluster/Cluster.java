@@ -187,7 +187,7 @@ public class Cluster {
     public void deregisterServer(String fullHost) {
         lock.lock();
         try {
-            DebugUtils.log("Deregistering server " + fullHost);
+            DebugUtils.info("Deregistering server " + fullHost);
             removeClusterNode(fullHost);
         } finally {
             lock.unlock();
@@ -197,7 +197,7 @@ public class Cluster {
     public void deregisterLastServer() {
         lock.lock();
         try {
-            DebugUtils.log("Deregistering last server in the cluster");
+            DebugUtils.info("Deregistering last server in the cluster");
             removeClusterNode();
         } finally {
             lock.unlock();
@@ -227,7 +227,7 @@ public class Cluster {
         try {
             for (ServerNode node : cluster.values()) {
                 if (node != null) {
-                    DebugUtils.log(node.toString());
+                    DebugUtils.info(node.toString());
                 }
             }
         } finally {
@@ -298,7 +298,7 @@ public class Cluster {
             String key = updatedNode.getId();
             if (this.cluster.containsKey(key)) {
                 this.cluster.put(key, updatedNode);
-                DebugUtils.log("Updated server node configuration: " + updatedNode);
+                DebugUtils.info("Updated server node configuration: " + updatedNode);
                 if (!batchMode) {
                     ClusterStatePersistence.saveState();
                 }
@@ -354,7 +354,7 @@ public class Cluster {
                 DebugUtils.error(this.clusterName, null, "Cannot register a new server while there are stopped servers in the cluster. Please register all stopped servers first.");
                 return;
             }
-            DebugUtils.log("Registering server on host: " + host + ", port: " + port);
+            DebugUtils.info("Registering server on host: " + host + ", port: " + port);
             host = validHost(host);
             addClusterNode(new ServerNode(host, port, status, isExternal));
         } finally {
