@@ -126,18 +126,6 @@ public class UndertowHttpTransport implements ServerTransport {
             builder.setHandler(new HttpHandler() {
                 @Override
                 public void handleRequest(HttpServerExchange exchange) throws Exception {
-                    String path = exchange.getRequestPath();
-                    String matchingPath = path.startsWith("/v1/") ? path.substring(3) : (path.equals("/v1") ? "/" : path);
-                    
-                    RouteResolution resolution = PathResolver.resolve(matchingPath, exchange.getRequestHeaders().getFirst(io.undertow.util.Headers.HOST), registry);
-                    boolean canUseFastPath = resolution.isLocal() 
-                            && (activeFilters.isEmpty() || (activeFilters.size() == 1 && activeFilters.get(0) instanceof CorsFilter));
-
-                    if (canUseFastPath) {
-                        processRequest(exchange, registry);
-                        return;
-                    }
-
                     if (exchange.isInIoThread()) {
                         exchange.dispatch(virtualExecutor, () -> {
                             try {
@@ -164,46 +152,9 @@ public class UndertowHttpTransport implements ServerTransport {
     private void processRequest(HttpServerExchange exchange, RouteRegistry registry) {
         try {
             UndertowHttpRequestImpl req = new UndertowHttpRequestImpl(exchange);
-            RouteResolution resolution = PathResolver.resolve(req.getPath(), req.getHeader("Host"), registry);
-
-            boolean canUseFastPath = resolution.isLocal() 
-                    && (activeFilters.isEmpty() || (activeFilters.size() == 1 && activeFilters.get(0) instanceof CorsFilter));
-
-            if (canUseFastPath) {
-                // Set CORS headers directly
-                exchange.getResponseHeaders().put(io.undertow.util.HttpString.tryFromString("Access-Control-Allow-Origin"), "*");
-                exchange.getResponseHeaders().put(io.undertow.util.HttpString.tryFromString("Access-Control-Allow-Methods"), "GET, POST, OPTIONS, PUT, DELETE");
-                exchange.getResponseHeaders().put(io.undertow.util.HttpString.tryFromString("Access-Control-Allow-Headers"), "X-Cluster-Token, Content-Type, Authorization");
-
-                if (io.undertow.util.Methods.OPTIONS.equals(exchange.getRequestMethod())) {
-                    exchange.setStatusCode(204);
-                    exchange.endExchange();
-                    return;
-                }
-
-                BiConsumer<String, PrintWriter> handler = registry.getRoutes().get(resolution.localRouteName());
-                if (handler != null) {
-                    if (resolution.localRouteName().equals("/V1/GET_NODES_JSON")) {
-                        exchange.getResponseHeaders().put(io.undertow.util.Headers.CONTENT_TYPE, "application/json");
-                    } else {
-                        exchange.getResponseHeaders().put(io.undertow.util.Headers.CONTENT_TYPE, "text/plain");
-                    }
-                    exchange.setStatusCode(200);
-
-                    FastPrintWriter out = FAST_WRITER.get();
-                    out.reset();
-                    String query = req.getQuery();
-                    String args = query != null ? query : "";
-                    handler.accept(args, out);
-
-                    byte[] responseBytes = out.toBytes();
-                    exchange.getResponseHeaders().put(io.undertow.util.Headers.CONTENT_LENGTH, String.valueOf(responseBytes.length));
-                    exchange.getResponseSender().send(java.nio.ByteBuffer.wrap(responseBytes));
-                    return;
-                }
-            }
-
             UndertowHttpResponseImpl res = new UndertowHttpResponseImpl(exchange);
+
+            RouteResolution resolution = PathResolver.resolve(req.getPath(), req.getHeader("Host"), registry);
 
             BiConsumer<HttpRequest, HttpResponse> routeHandler = (r, s) -> {
                 try {
