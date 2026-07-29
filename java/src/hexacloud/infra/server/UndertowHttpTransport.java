@@ -86,9 +86,9 @@ public class UndertowHttpTransport implements ServerTransport {
             rebuildFilters(clusters, customFilters);
             io.undertow.connector.ByteBufferPool bufferPool = new io.undertow.server.DefaultByteBufferPool(
                     false, 
-                    16384, 
+                    8192, 
                     -1, 
-                    24, 
+                    2, 
                     0
             );
             Undertow.Builder builder = Undertow.builder()
