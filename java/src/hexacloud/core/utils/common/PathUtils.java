@@ -53,15 +53,29 @@ public class PathUtils {
         return implementations;
     }
 
-    private static String getAppBasePackage() {
-        String command = System.getProperty("sun.java.command");
-        if (command == null || command.trim().isEmpty()) {
-            return "";
+    /**
+     * Resolves the main application's base package name.
+     * Uses stack trace examination to find the entrypoint class, falling back to system properties.
+     */
+    public static String getAppBasePackage() {
+        for (StackTraceElement element : Thread.currentThread().getStackTrace()) {
+            if ("main".equals(element.getMethodName())) {
+                String mainClass = element.getClassName();
+                int lastDot = mainClass.lastIndexOf('.');
+                if (lastDot != -1) {
+                    return mainClass.substring(0, lastDot);
+                }
+            }
         }
-        String mainClass = command.split(" ")[0];
-        int lastDot = mainClass.lastIndexOf('.');
-        if (lastDot != -1) {
-            return mainClass.substring(0, lastDot);
+        String command = System.getProperty("sun.java.command");
+        if (command != null && !command.trim().isEmpty()) {
+            String mainClass = command.split(" ")[0];
+            if (!mainClass.endsWith(".jar")) {
+                int lastDot = mainClass.lastIndexOf('.');
+                if (lastDot != -1) {
+                    return mainClass.substring(0, lastDot);
+                }
+            }
         }
         return "";
     }

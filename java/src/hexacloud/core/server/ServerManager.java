@@ -62,26 +62,13 @@ public class ServerManager implements ServerOperations {
         this.port = port;
     }
 
-    private String getAppBasePackage() {
-        String command = System.getProperty("sun.java.command");
-        if (command == null || command.trim().isEmpty()) {
-            return "";
-        }
-        String mainClass = command.split(" ")[0];
-        int lastDot = mainClass.lastIndexOf('.');
-        if (lastDot != -1) {
-            return mainClass.substring(0, lastDot);
-        }
-        return "";
-    }
-
     public void autoRegisterControllers(List<String> scanPackages) {
         List<String> packages = new ArrayList<>();
         if (scanPackages != null) {
             packages.addAll(scanPackages);
         }
         if (packages.isEmpty()) {
-            String basePkg = getAppBasePackage();
+            String basePkg = hexacloud.core.utils.common.PathUtils.getAppBasePackage();
             if (!basePkg.isEmpty()) {
                 packages.add(basePkg);
             }
