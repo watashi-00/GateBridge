@@ -85,6 +85,7 @@ public class Main {
         // Launch the DevOps Panel in non-blocking toggle mode (detach/reattach with ENTER)
         TerminalUiFactory.createTui("MyCompany - GateBridge DevOps Panel")
             .seedGateway(runningGateway)
+            .redirectSystemOut(true)
             .startToggleMode();
     }
 
@@ -124,7 +125,7 @@ public class Main {
 
     // Custom developer endpoint controller - automatically discovered by PathUtils scanner
     public static class CustomAppController implements RouteController {
-        @RouteMapping("HELLO")
+        @RouteMapping("/hello")
         public void sayHello(String args, PrintWriter out) {
             out.println("HELLO FROM DEVELOPER ROUTE! Args: " + args);
         }

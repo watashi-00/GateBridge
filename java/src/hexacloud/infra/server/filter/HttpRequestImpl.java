@@ -39,4 +39,7 @@ public class HttpRequestImpl implements HttpRequest {
     @Override public Object getAttribute(String key) {
         return attributes == null ? null : attributes.get(key);
     }
+    @Override public java.io.InputStream getBody() throws Exception {
+        return exchange.getRequestBody();
+    }
 }

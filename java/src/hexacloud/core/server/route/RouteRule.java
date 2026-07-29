@@ -17,7 +17,7 @@ public class RouteRule {
         this.pathPattern = pathPattern;
         this.clusterName = clusterName;
         this.targetPath = normalizeTargetPath(targetPath);
-        DebugUtils.info("New rule: " + this);
+        DebugUtils.info("[RouteRule] New RouteRule: " + this);
     }
 
     public String getHost() { 

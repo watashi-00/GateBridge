@@ -65,7 +65,7 @@ public class ClusterTest {
         cluster.registerServer(node);
         assertEquals(1, cluster.getCluster().size());
 
-        cluster.deregisterServer("http://127.0.0.1:9000");
+        cluster.deregisterServer("127.0.0.1:9000");
         assertTrue(cluster.getCluster().isEmpty());
     }
 

@@ -33,6 +33,7 @@ public class TerminalUI implements hexacloud.core.ports.TerminalUiPort {
     private boolean nodeManagementEnabled = true;
     private boolean nodeConfigurationEnabled = true;
     private boolean tokenManagementEnabled = true;
+    private boolean redirectSystemOut = false;
     private boolean isToggleMode = false;
 
     private static final Map<String, RunningGatewayPort> activeGateways = new ConcurrentHashMap<>();
@@ -123,6 +124,10 @@ public class TerminalUI implements hexacloud.core.ports.TerminalUiPort {
         return nodeConfigurationEnabled;
     }
 
+    public boolean redirectSystemOut() {
+        return redirectSystemOut;
+    }
+
     @Override
     public boolean tokenManagementEnabled() {
         return tokenManagementEnabled;
@@ -167,6 +172,12 @@ public class TerminalUI implements hexacloud.core.ports.TerminalUiPort {
     @Override
     public hexacloud.core.ports.TerminalUiPort tokenManagementEnabled(boolean enabled) {
         this.tokenManagementEnabled = enabled;
+        return this;
+    }
+
+    @Override
+    public hexacloud.core.ports.TerminalUiPort redirectSystemOut(boolean redirect) {
+        this.redirectSystemOut = redirect;
         return this;
     }
 
@@ -228,7 +239,9 @@ public class TerminalUI implements hexacloud.core.ports.TerminalUiPort {
      */
     public void run() {
         state.running = true;
-        DebugUtils.setTuiModeActive(true);
+        if (redirectSystemOut) {
+            DebugUtils.setTuiModeActive(true);
+        }
 
         NativeTerminal.initTerminal();
         registerShutdownHook();
@@ -379,7 +392,9 @@ public class TerminalUI implements hexacloud.core.ports.TerminalUiPort {
             hexacloud.core.event.EventBusManager.getGlobal().removeInterceptor(interceptor);
         }
         NativeTerminal.resetTerminal();
-        DebugUtils.setTuiModeActive(false);
+        if (redirectSystemOut) {
+            DebugUtils.setTuiModeActive(false);
+        }
         if (!readOnly && !isToggleMode) {
             // Stop all gateways if not read-only and not toggle mode
             for (RunningGatewayPort gw : activeGateways.values()) {

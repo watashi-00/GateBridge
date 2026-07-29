@@ -56,15 +56,17 @@ public class L4RoutingTest {
         testCluster = new Cluster("l4-test-cluster");
         testCluster.setRoutingMode(Cluster.RoutingMode.HYBRID);
 
-        ServerNode node1 = new ServerNode("node-1", "http://127.0.0.1", backendPort1, NodeStatus.ONLINE, false);
-        ServerNode node2 = new ServerNode("node-2", "http://127.0.0.1", backendPort2, NodeStatus.ONLINE, false);
+        ServerNode node1 = new ServerNode("node-1", "http://127.0.0.1", backendPort1, NodeStatus.ONLINE, false)
+                .withRoutingProtocol(hexacloud.core.model.RoutingProtocol.TCP);
+        ServerNode node2 = new ServerNode("node-2", "http://127.0.0.1", backendPort2, NodeStatus.ONLINE, false)
+                .withRoutingProtocol(hexacloud.core.model.RoutingProtocol.TCP);
 
         testCluster.registerServer(node1);
         testCluster.registerServer(node2);
 
         // Start TcpProxyTransport
         transport = new TcpProxyTransport();
-        transport.listen(proxyPort, new RouteRegistry(), testCluster, new ArrayList<>());
+        transport.listen(proxyPort, new RouteRegistry(), java.util.List.of(testCluster), new ArrayList<>());
 
         waitUntilRunning(transport);
     }
@@ -131,7 +133,7 @@ public class L4RoutingTest {
     public void testNoActiveNodes() throws Exception {
         // Set all nodes offline
         for (ServerNode node : testCluster.getCluster()) {
-            testCluster.updateStatusServer(node.getFullHost(), NodeStatus.OFFLINE);
+            testCluster.updateStatusServer(node.getId(), NodeStatus.OFFLINE);
         }
 
         // Try connecting to proxy
@@ -158,6 +160,50 @@ public class L4RoutingTest {
         assertTrue(resp.contains("Echo from Backend"));
 
         manager.stop();
+    }
+
+    @Test
+    public void testBoundedBufferPool() throws Exception {
+        java.lang.reflect.Field poolField = TcpProxyTransport.class.getDeclaredField("BUFFER_POOL");
+        poolField.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        java.util.concurrent.ConcurrentLinkedQueue<byte[]> pool =
+                (java.util.concurrent.ConcurrentLinkedQueue<byte[]>) poolField.get(null);
+
+        java.lang.reflect.Field sizeField = TcpProxyTransport.class.getDeclaredField("POOL_SIZE");
+        sizeField.setAccessible(true);
+        java.util.concurrent.atomic.AtomicInteger poolSize = (java.util.concurrent.atomic.AtomicInteger) sizeField.get(null);
+
+        try {
+            pool.clear();
+
+            java.lang.reflect.Field maxField = TcpProxyTransport.class.getDeclaredField("MAX_POOL_SIZE");
+            maxField.setAccessible(true);
+            int maxPoolSize = maxField.getInt(null);
+            assertEquals(512, maxPoolSize, "MAX_POOL_SIZE must be 512");
+
+            java.lang.reflect.Method tunnelMethod = TcpProxyTransport.class.getDeclaredMethod(
+                    "tunnel",
+                    java.io.InputStream.class,
+                    java.io.OutputStream.class,
+                    Socket.class,
+                    Socket.class
+            );
+            tunnelMethod.setAccessible(true);
+
+            pool.clear();
+            poolSize.set(512);
+
+            java.io.ByteArrayInputStream in = new java.io.ByteArrayInputStream(new byte[0]);
+            java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+            tunnelMethod.invoke(transport, in, out, null, null);
+
+            assertEquals(0, pool.size(), "BUFFER_POOL size should remain 0");
+            assertEquals(512, poolSize.get(), "POOL_SIZE should remain 512");
+        } finally {
+            poolSize.set(0);
+            pool.clear();
+        }
     }
 
     private String sendTcpMessage(String host, int port, String message) throws Exception {

@@ -34,16 +34,14 @@ public class LocalFilePersistenceAdapter implements ClusterPersistencePort {
         if (dir == null) {
             dir = System.getenv("HEXACLOUD_STATE_DIR");
         }
-
         if (dir == null || dir.trim().isEmpty()) {
             dir = ".state";
         }
-
         File dirFile = new File(dir);
         if (!dirFile.exists()) {
             dirFile.mkdirs();
+            DebugUtils.info("Created directory " + dirFile.getAbsolutePath());
         }
-
         return dir;
     }
 
@@ -87,7 +85,7 @@ public class LocalFilePersistenceAdapter implements ClusterPersistencePort {
 
             java.util.List<String> nodeKeys = new java.util.ArrayList<>();
             for (ServerNode node : cluster.getCluster()) {
-                String nodeKey = node.getFullHost();
+                String nodeKey = node.getId();
                 nodeKeys.add(nodeKey);
 
                 writer.println("# === BEGIN NODE " + nodeKey + " ===");
@@ -115,7 +113,7 @@ public class LocalFilePersistenceAdapter implements ClusterPersistencePort {
             writer.println("# === END NODE LIST ===");
             writer.println();
 
-            DebugUtils.log("DevOps Panel: Saved active configurations state to " + filePath);
+            DebugUtils.info("DevOps Panel: Saved active configurations state to " + filePath);
         } catch (IOException e) {
             DebugUtils.error("DevOps Panel: Failed to save state file for cluster " + name, e);
         }
@@ -124,6 +122,7 @@ public class LocalFilePersistenceAdapter implements ClusterPersistencePort {
     @Override
     public synchronized void loadState() {
         loading = true;
+        DebugUtils.info("DevOps Panel: Loading active configurations from ");
         try {
             List<File> filesToLoad = new ArrayList<>();
             
@@ -131,11 +130,11 @@ public class LocalFilePersistenceAdapter implements ClusterPersistencePort {
             findStateFiles(stateDir, filesToLoad);
 
             if (filesToLoad.isEmpty()) {
-                DebugUtils.log("DevOps Panel: No *-state.properties configuration files found in '" + stateDir.getPath() + "'. Checking classpath resources...");
+                DebugUtils.info("DevOps Panel: No *-state.properties configuration files found in '" + stateDir.getPath() + "'. Checking classpath resources...");
                 
                 boolean loadedFromClasspath = tryLoadFromClasspath("c1");
                 if (!loadedFromClasspath) {
-                    DebugUtils.log("DevOps Panel: No default state files found on classpath. Starting clean.");
+                    DebugUtils.info("DevOps Panel: No default state files found on classpath. Starting clean.");
                     stateLoaded = false;
                     return;
                 }
@@ -206,7 +205,7 @@ public class LocalFilePersistenceAdapter implements ClusterPersistencePort {
             return;
         }
         loadClusterStateProperties(props, name);
-        DebugUtils.log("DevOps Panel: Configuration state restored for cluster '" + name + "' from " + file.getPath());
+        DebugUtils.info("DevOps Panel: Configuration state restored for cluster '" + name + "' from " + file.getPath());
     }
 
     private void loadClusterStateProperties(Properties props, String name) {
@@ -269,7 +268,7 @@ public class LocalFilePersistenceAdapter implements ClusterPersistencePort {
                 );
                 
                 boolean alreadyRegistered = cluster.getCluster().stream()
-                    .anyMatch(n -> n.getFullHost().equals(node.getFullHost()));
+                    .anyMatch(n -> n.getId().equals(node.getId()));
                 if (!alreadyRegistered) {
                     cluster.registerLoadedServer(node);
                 }

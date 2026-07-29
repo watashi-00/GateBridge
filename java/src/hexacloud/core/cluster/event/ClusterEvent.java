@@ -20,9 +20,9 @@ public interface ClusterEvent extends Event {
 
     record NodeDeregistered(String host) implements ClusterEvent {}
 
-    record NodeStatusChanged(String host, NodeStatus status) implements ClusterEvent {}
+    record NodeStatusChanged(String host, NodeStatus status, String nodeId) implements ClusterEvent {}
 
-    record NodeTelemetryUpdated(String host) implements ClusterEvent {}
+    record NodeTelemetryUpdated(String host, String nodeId) implements ClusterEvent {}
 
     record NodeEventSubmitted(String host, int port, PingProtocol protocol, EventFormat format, String event,
                               Map<String, String> attributes) implements ClusterEvent {}

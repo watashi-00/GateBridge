@@ -41,7 +41,7 @@ public class UndertowHttpResponseImpl implements HttpResponse {
             if (!exchange.isBlocking()) {
                 exchange.startBlocking();
             }
-            writer = new PrintWriter(new java.io.BufferedWriter(new java.io.OutputStreamWriter(exchange.getOutputStream(), java.nio.charset.StandardCharsets.UTF_8)));
+            writer = new PrintWriter(new java.io.OutputStreamWriter(exchange.getOutputStream(), java.nio.charset.StandardCharsets.UTF_8));
         }
         return writer;
     }
@@ -49,6 +49,17 @@ public class UndertowHttpResponseImpl implements HttpResponse {
     @Override
     public boolean isCommitted() {
         return exchange.isResponseStarted();
+    }
+
+    @Override
+    public java.io.OutputStream getOutputStream() throws Exception {
+        if (!statusSet && !exchange.isResponseStarted()) {
+            exchange.setStatusCode(200);
+        }
+        if (!exchange.isBlocking()) {
+            exchange.startBlocking();
+        }
+        return exchange.getOutputStream();
     }
     
     public void flushBuffer() {

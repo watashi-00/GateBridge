@@ -29,6 +29,7 @@ public class Cluster {
     private final ClusterSecurityManager securityManager;
     private final RouteRegistry routeRegistry;
     private final ReentrantLock lock = new ReentrantLock();
+    private final java.util.concurrent.atomic.AtomicInteger roundRobinIdx = new java.util.concurrent.atomic.AtomicInteger(0);
 
     private String clusterName = ClusterConfig.DEFAULT_CLUSTER_NAME;
     private String clusterUri = ClusterConfig.DEFAULT_CLUSTER_URI;
@@ -62,7 +63,7 @@ public class Cluster {
         this.clusterName = clusterName;
         this.eventManager = eventManager;
         this.securityManager = new ClusterSecurityManager(clusterName);
-        this.routeRegistry = new RouteRegistry();
+        this.routeRegistry = new RouteRegistry("Cluster:" + clusterName);
         this.routeRegistry.registerController(new ClusterController(this));
         ClusterRegistry.getInstance().registerCluster(this);
     }
@@ -94,14 +95,13 @@ public class Cluster {
             String host = validHost(node.host());
             if (host == null) return;
 
-            String fullHost = host + ":" + node.port();
             if (bootstrapMode) {
-                registeredStaticNodesThisRun.add(fullHost);
-                staticNodes.add(fullHost);
+                registeredStaticNodesThisRun.add(node.getId());
+                staticNodes.add(node.getId());
                 
                 // If a state file was loaded, respect remote deletions of static nodes
                 if (hexacloud.core.config.ClusterStatePersistence.isStateLoaded()) {
-                    if (persistedStaticNodes.contains(fullHost) && !cluster.containsKey(fullHost)) {
+                    if (persistedStaticNodes.contains(node.getId()) && !cluster.containsKey(node.getId())) {
                         return; // Ignore/Respect remote deletion
                     }
                 }
@@ -112,7 +112,7 @@ public class Cluster {
 
             ServerNode validNode = new ServerNode(
                 node.name(), host, node.port(), node.status(), node.isExternal(),
-                node.pingProtocol(), node.pingPath(), node.pingHeaderName(), node.pingHeaderValue(), node.isDynamic(), node.telemetryOnly()
+                node.pingProtocol(), node.pingPath(), node.pingHeaderName(), node.pingHeaderValue(), node.isDynamic(), node.telemetryOnly(), node.routingProtocol()
             );
             addClusterNode(validNode);
         } finally {
@@ -127,15 +127,14 @@ public class Cluster {
             String host = validHost(node.host());
             if (host == null) return;
 
-            String fullHost = host + ":" + node.port();
             if (!node.isDynamic()) {
-                staticNodes.add(fullHost);
-                persistedStaticNodes.add(fullHost);
+                staticNodes.add(node.getId());
+                persistedStaticNodes.add(node.getId());
             }
 
             ServerNode validNode = new ServerNode(
                 node.name(), host, node.port(), node.status(), node.isExternal(),
-                node.pingProtocol(), node.pingPath(), node.pingHeaderName(), node.pingHeaderValue(), node.isDynamic(), node.telemetryOnly()
+                node.pingProtocol(), node.pingPath(), node.pingHeaderName(), node.pingHeaderValue(), node.isDynamic(), node.telemetryOnly(), node.routingProtocol()
             );
             addClusterNode(validNode);
         } finally {
@@ -149,15 +148,15 @@ public class Cluster {
             this.bootstrapMode = false;
             if (hexacloud.core.config.ClusterStatePersistence.isStateLoaded()) {
                 java.util.List<String> toPrune = new java.util.ArrayList<>();
-                for (String fullHost : persistedStaticNodes) {
-                    if (!registeredStaticNodesThisRun.contains(fullHost)) {
-                        toPrune.add(fullHost);
+                for (String nodeId : persistedStaticNodes) {
+                    if (!registeredStaticNodesThisRun.contains(nodeId)) {
+                        toPrune.add(nodeId);
                     }
                 }
-                for (String fullHost : toPrune) {
-                    cluster.remove(fullHost);
-                    staticNodes.remove(fullHost);
-                    persistedStaticNodes.remove(fullHost);
+                for (String nodeId : toPrune) {
+                    cluster.remove(nodeId);
+                    staticNodes.remove(nodeId);
+                    persistedStaticNodes.remove(nodeId);
                 }
                 if (!toPrune.isEmpty()) {
                     hexacloud.core.config.ClusterStatePersistence.saveState();
@@ -189,7 +188,7 @@ public class Cluster {
     public void deregisterServer(String fullHost) {
         lock.lock();
         try {
-            DebugUtils.log("Deregistering server " + fullHost);
+            DebugUtils.info("Deregistering server " + fullHost);
             removeClusterNode(fullHost);
         } finally {
             lock.unlock();
@@ -199,7 +198,7 @@ public class Cluster {
     public void deregisterLastServer() {
         lock.lock();
         try {
-            DebugUtils.log("Deregistering last server in the cluster");
+            DebugUtils.info("Deregistering last server in the cluster");
             removeClusterNode();
         } finally {
             lock.unlock();
@@ -229,7 +228,7 @@ public class Cluster {
         try {
             for (ServerNode node : cluster.values()) {
                 if (node != null) {
-                    DebugUtils.log(node.toString());
+                    DebugUtils.info(node.toString());
                 }
             }
         } finally {
@@ -246,14 +245,35 @@ public class Cluster {
         }
     }
 
-    public void updateStatusServer(String host, NodeStatus status) {
+    public ServerNode selectNode() {
         lock.lock();
         try {
-            if (!this.cluster.containsKey(host)) {
-                DebugUtils.error(this.clusterName, host, "Cannot update status: Server host '" + host + "' is not registered in the cluster.");
+            List<ServerNode> activeNodes = new ArrayList<>();
+            for (ServerNode n : cluster.values()) {
+                if (n != null && n.status() == NodeStatus.ONLINE && !n.telemetryOnly()
+                        && (n.routingProtocol() == hexacloud.core.model.RoutingProtocol.HTTP
+                         || n.routingProtocol() == hexacloud.core.model.RoutingProtocol.GRPC)) {
+                    activeNodes.add(n);
+                }
+            }
+            if (activeNodes.isEmpty()) {
+                return null;
+            }
+            int selectedIndex = (roundRobinIdx.getAndIncrement() & Integer.MAX_VALUE) % activeNodes.size();
+            return activeNodes.get(selectedIndex);
+        } finally {
+            lock.unlock();
+        }
+    }
+    // this method ok
+    public void updateStatusServer(String nodeId, NodeStatus status) {
+        lock.lock();
+        try {
+            if (!this.cluster.containsKey(nodeId)) {
+                DebugUtils.error(this.clusterName, nodeId, "Cannot update status: Server node '" + nodeId + "' is not registered in the cluster.");
                 return;
             }
-            this.cluster.computeIfPresent(host, (key, serverNode) -> serverNode.withStatus(status));
+            this.cluster.computeIfPresent(nodeId, (key, serverNode) -> serverNode.withStatus(status));
         } finally {
             lock.unlock();
         }
@@ -281,10 +301,7 @@ public class Cluster {
             if (latencyMs != null) updated.setLatencyMs(latencyMs);
 
             this.cluster.put(targetKey, updated);
-            if (!batchMode) {
-                ClusterStatePersistence.saveState();
-            }
-            return new NodeUpdateResult(updated.getFullHost(), updated.pingProtocol().getFriendlyName(), statusChanged, telemetryUpdated);
+            return new NodeUpdateResult(updated.getFullHost(), updated.pingProtocol().getFriendlyName(), statusChanged, telemetryUpdated, current.getId());
         } finally {
             lock.unlock();
         }
@@ -297,10 +314,10 @@ public class Cluster {
         if (updatedNode == null) return;
         lock.lock();
         try {
-            String key = updatedNode.getFullHost();
+            String key = updatedNode.getId();
             if (this.cluster.containsKey(key)) {
                 this.cluster.put(key, updatedNode);
-                DebugUtils.log("Updated server node configuration: " + updatedNode);
+                DebugUtils.info("Updated server node configuration: " + updatedNode);
                 if (!batchMode) {
                     ClusterStatePersistence.saveState();
                 }
@@ -333,7 +350,7 @@ public class Cluster {
                     if (start) {
                         registerServer(node);
                     } else {
-                        deregisterServer(node.getFullHost());
+                        deregisterServer(node.getId());
                     }
                 }
             }
@@ -356,7 +373,7 @@ public class Cluster {
                 DebugUtils.error(this.clusterName, null, "Cannot register a new server while there are stopped servers in the cluster. Please register all stopped servers first.");
                 return;
             }
-            DebugUtils.log("Registering server on host: " + host + ", port: " + port);
+            DebugUtils.info("Registering server on host: " + host + ", port: " + port);
             host = validHost(host);
             addClusterNode(new ServerNode(host, port, status, isExternal));
         } finally {
@@ -372,7 +389,7 @@ public class Cluster {
             return;
         }
 
-        cluster.put(node.getFullHost(), node);
+        cluster.put(node.getId(), node);
         if (eventManager != null) {
             eventManager.dispatch(new NodeRegistered(node));
         }
@@ -399,11 +416,11 @@ public class Cluster {
             });
     }
 
-    private void removeClusterNode(String fullHost) {
-        if (cluster.containsKey(fullHost)) {
-            cluster.remove(fullHost);
+    private void removeClusterNode(String nodeId) {
+        if (cluster.containsKey(nodeId)) {
+            cluster.remove(nodeId);
             if (eventManager != null) {
-                eventManager.dispatch(new hexacloud.core.cluster.event.ClusterEvent.NodeDeregistered(fullHost));
+                eventManager.dispatch(new hexacloud.core.cluster.event.ClusterEvent.NodeDeregistered(nodeId));
             }
             if (!batchMode) {
                 ClusterStatePersistence.saveState();
@@ -440,8 +457,8 @@ public class Cluster {
             return false;
         }
 
-        if (cluster.containsKey(node.getFullHost())) {
-            DebugUtils.error(this.clusterName, null, "Invalid server node: node '" + node.getFullHost() + "' is already registered");
+        if (cluster.containsKey(node.getId())) {
+            DebugUtils.error(this.clusterName, null, "Invalid server node: node '" + node.getId() + "' is already registered");
             return false;
         }
 
@@ -454,7 +471,7 @@ public class Cluster {
         for (ServerNode node : cluster.values()) {
             if (node == null) continue;
             if (node.getHostWithoutProtocol().equals(normalizedTargetHost) && node.port() == port) {
-                return node.getFullHost();
+                return node.getId();
             }
         }
         return null;

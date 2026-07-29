@@ -35,11 +35,13 @@ class LocalGatewayAdapter implements GatewayBuilderPort, RunningGatewayPort {
     private hexacloud.core.server.HttpEngine httpEngine = hexacloud.core.server.HttpEngine.JDK_DEFAULT;
     private hexacloud.core.server.PerformanceProfile performanceProfile = hexacloud.core.server.PerformanceProfile.STANDARD;
     private hexacloud.core.ports.SslContextPort sslContextPort;
+    private int tcpSoTimeout = 30000;
+    private boolean tcpKeepAlive = true;
+    private final List<String> scanPackages = new ArrayList<>();
 
     public LocalGatewayAdapter(String gatewayName) {
-        DebugUtils.log("Creating LocalGatewayAdapter for gateway: " + gatewayName);
+        DebugUtils.info("Creating LocalGatewayAdapter for gateway: " + gatewayName);
         this.clusterEventManager = new ClusterEventBusManager();
-        autoRegisterEventListeners();
         
         // Load configurations state from file on startup
         ClusterStatePersistence.loadState();
@@ -76,6 +78,18 @@ class LocalGatewayAdapter implements GatewayBuilderPort, RunningGatewayPort {
     @Override
     public LocalGatewayAdapter sslContext(hexacloud.core.ports.SslContextPort sslContextPort) {
         this.sslContextPort = sslContextPort;
+        return this;
+    }
+
+    @Override
+    public LocalGatewayAdapter scanPackages(String... packages) {
+        if (packages != null) {
+            for (String pkg : packages) {
+                if (pkg != null && !pkg.trim().isEmpty()) {
+                    this.scanPackages.add(pkg.trim());
+                }
+            }
+        }
         return this;
     }
 
@@ -164,27 +178,41 @@ class LocalGatewayAdapter implements GatewayBuilderPort, RunningGatewayPort {
 
     private void ensureServerManagerInitialized() {
         if(this.serverManager == null) {
-            this.serverManager = new ServerManager(getCluster(), this.clusterEventManager);
+            this.serverManager = new ServerManager(getClusters(), this.clusterEventManager);
             this.serverManager.setHttpEngine(this.httpEngine);
             this.serverManager.setPerformanceProfile(this.performanceProfile);
             this.serverManager.enableTcpProxy(this.tcpProxyEnabled);
+            this.serverManager.tcpSoTimeout(this.tcpSoTimeout);
+            this.serverManager.tcpKeepAlive(this.tcpKeepAlive);
         }
     }
 
     private void autoRegisterEventListeners() {
-        try {
-            java.util.List<Class<?>> controllers = hexacloud.core.utils.common.PathUtils.scanClasspathForImplementations(hexacloud.core.event.EventController.class);
-            for (Class<?> clazz : controllers) {
-                try {
-                    hexacloud.core.event.EventController listener = (hexacloud.core.event.EventController) clazz.getDeclaredConstructor().newInstance();
-                    this.clusterEventManager.registerListener(listener);
-                    DebugUtils.log("EventScanner: Auto-discovered and registered listener: " + clazz.getName());
-                } catch (Exception e) {
-                    DebugUtils.error("EventScanner: Failed to auto-instantiate listener " + clazz.getName(), e);
-                }
+        List<String> packages = new ArrayList<>(this.scanPackages);
+        if (packages.isEmpty()) {
+            String basePkg = hexacloud.core.utils.common.PathUtils.getAppBasePackage();
+            if (!basePkg.isEmpty()) {
+                packages.add(basePkg);
             }
-        } catch (Exception e) {
-            DebugUtils.error("EventScanner: Failed to scan classpath for EventControllers", e);
+            packages.add("hexacloud");
+        }
+
+        for (String pkg : packages) {
+            try {
+                List<Class<? extends hexacloud.core.event.EventController>> listeners =
+                        hexacloud.core.utils.reflection.ClassScanner.scanPackage(pkg, hexacloud.core.event.EventController.class);
+                for (Class<? extends hexacloud.core.event.EventController> clazz : listeners) {
+                    try {
+                        hexacloud.core.event.EventController listener = clazz.getDeclaredConstructor().newInstance();
+                        this.clusterEventManager.registerListener(listener);
+                        DebugUtils.info("EventScanner: Auto-discovered and registered listener: " + clazz.getName());
+                    } catch (Exception e) {
+                        DebugUtils.error("EventScanner: Failed to auto-instantiate listener " + clazz.getName(), e);
+                    }
+                }
+            } catch (Exception e) {
+                DebugUtils.error("EventScanner: Failed to scan package " + pkg + " for EventControllers", e);
+            }
         }
     }
 
@@ -213,11 +241,13 @@ class LocalGatewayAdapter implements GatewayBuilderPort, RunningGatewayPort {
     public LocalGatewayAdapter listen(int port) {
         this.port = port;
         ensureServerManagerInitialized();
+        autoRegisterEventListeners();
+        this.serverManager.autoRegisterControllers(this.scanPackages);
         this.serverManager.setSslContext(this.sslContextPort);
         for (Cluster cluster : getClusters()) {
             cluster.endBootstrapPhase(); // Transition clusters to runtime
         }
-        DebugUtils.log("LocalGatewayAdapter: Starting server listeners on port " + port);
+        DebugUtils.info("LocalGatewayAdapter: Starting server listeners on port " + port);
         this.serverManager.listen(port);
         this.running = true;
 
@@ -345,6 +375,19 @@ class LocalGatewayAdapter implements GatewayBuilderPort, RunningGatewayPort {
     }
 
     @Override
+    public LocalGatewayAdapter authService(String authServiceUrl) {
+        return authService(authServiceUrl, 3000);
+    }
+
+    @Override
+    public LocalGatewayAdapter authService(String authServiceUrl, int timeoutMs) {
+        if (authServiceUrl == null || authServiceUrl.trim().isEmpty()) {
+            throw new IllegalArgumentException("authServiceUrl must not be null or empty");
+        }
+        return registerFilter(new hexacloud.core.server.filter.builtin.ExternalAuthFilter(authServiceUrl, timeoutMs));
+    }
+
+    @Override
     public LocalGatewayAdapter rateLimit(int requests, int durationSeconds) {
         requireActiveCluster().setRateLimit(requests, durationSeconds);
         return this;
@@ -441,6 +484,22 @@ class LocalGatewayAdapter implements GatewayBuilderPort, RunningGatewayPort {
         this.tcpProxyEnabled = enabled;
         ensureServerManagerInitialized();
         this.serverManager.enableTcpProxy(enabled);
+        return this;
+    }
+
+    @Override
+    public LocalGatewayAdapter tcpSoTimeout(int timeoutMs) {
+        this.tcpSoTimeout = timeoutMs;
+        ensureServerManagerInitialized();
+        this.serverManager.tcpSoTimeout(timeoutMs);
+        return this;
+    }
+
+    @Override
+    public LocalGatewayAdapter tcpKeepAlive(boolean enabled) {
+        this.tcpKeepAlive = enabled;
+        ensureServerManagerInitialized();
+        this.serverManager.tcpKeepAlive(enabled);
         return this;
     }
 

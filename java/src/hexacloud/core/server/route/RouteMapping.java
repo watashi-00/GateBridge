@@ -10,4 +10,5 @@ import java.lang.annotation.Target;
 public @interface RouteMapping {
     String value();
     boolean isPublic() default false;
+    boolean fastPath() default false;
 }

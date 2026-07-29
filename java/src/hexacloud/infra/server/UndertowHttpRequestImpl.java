@@ -98,4 +98,13 @@ public class UndertowHttpRequestImpl implements HttpRequest {
     public Object getAttribute(String key) {
         return attributes == null ? null : attributes.get(key);
     }
+
+    @Override
+    public java.io.InputStream getBody() throws Exception {
+        if (exchange.isBlocking()) {
+            return exchange.getInputStream();
+        }
+        exchange.startBlocking();
+        return exchange.getInputStream();
+    }
 }

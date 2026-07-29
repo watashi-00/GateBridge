@@ -33,6 +33,12 @@ public interface NodeBuilderPort {
     NodeBuilderPort telemetryOnly(boolean value);
 
     /**
+     * Set the transport protocol used to route traffic to this node.
+     * Defaults to HTTP. Set to TCP for raw TCP-only worker nodes.
+     */
+    NodeBuilderPort routingProtocol(hexacloud.core.model.RoutingProtocol protocol);
+
+    /**
      * Register the node in the cluster and return the parent GatewayBuilderPort for fluent chaining.
      */
     GatewayBuilderPort register();

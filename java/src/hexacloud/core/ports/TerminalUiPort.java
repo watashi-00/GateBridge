@@ -41,6 +41,12 @@ public interface TerminalUiPort {
     TerminalUiPort tokenManagementEnabled(boolean enabled);
     
     /**
+     * Set whether the TUI redirects System.out and System.err to the internal logs panel.
+     * Defaults to false (optional/disabled by default when embedded).
+     */
+    TerminalUiPort redirectSystemOut(boolean redirect);
+    
+    /**
      * Seed the TUI with an already started RunningGatewayPort instance.
      */
     TerminalUiPort seedGateway(RunningGatewayPort gateway);

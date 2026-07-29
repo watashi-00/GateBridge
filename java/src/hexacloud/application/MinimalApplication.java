@@ -131,6 +131,7 @@ public class MinimalApplication {
         // 6. Launch the DevOps Dashboard in non-blocking toggle mode (detach/reattach with ENTER)
         hexacloud.core.tui.TerminalUiFactory.createTui("GateBridge Minimal DevOps Panel")
             .seedGateway(runningGateway)
+            .redirectSystemOut(true)
             .startToggleMode();
     }
 
@@ -183,13 +184,13 @@ public class MinimalApplication {
 
     public static class DemoRouteController implements RouteController {
 
-        @RouteMapping("HELLO")
+        @RouteMapping("/hello")
         public void handleHello(String args, PrintWriter out) {
             out.println("HELLO FROM MINIMAL APPLICATION ROUTE!");
             out.println("Arguments received: " + (args.isEmpty() ? "None" : args));
         }
 
-        @RouteMapping("SYSTEM_INFO")
+        @RouteMapping("/system_info")
         public void handleSystemInfo(String args, PrintWriter out) {
             out.println("GateBridge Framework Status: ACTIVE");
             out.println("Available Processors: " + Runtime.getRuntime().availableProcessors());

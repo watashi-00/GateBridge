@@ -80,11 +80,12 @@ public class ThreadPingScheduler {
             NodeStatus status = result.status();
             boolean statusChanged = node.status() != status;
             if (statusChanged) {
-                eventManager.dispatch(new NodeStatusChanged(node.getFullHost(), status));
+                eventManager.dispatch(new NodeStatusChanged(node.getFullHost(), status, node.getId()));
+                DebugUtils.info("Node " + node.getFullHost() + " status updated to " + status + " (" + node.getId() + ")");
             }
             
             if (result.hasTelemetry()){
-                eventManager.dispatch(new hexacloud.core.cluster.event.ClusterEvent.NodeTelemetryUpdated(node.getFullHost()));
+                eventManager.dispatch(new hexacloud.core.cluster.event.ClusterEvent.NodeTelemetryUpdated(node.getFullHost(), node.getId()));
             }
         });
     }

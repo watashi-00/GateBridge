@@ -7,5 +7,6 @@ public interface HttpResponse {
     void setStatus(int statusCode);
     void setContentType(String contentType);
     PrintWriter getWriter() throws Exception;
+    java.io.OutputStream getOutputStream() throws Exception;
     boolean isCommitted();
 }

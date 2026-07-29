@@ -1,25 +1,17 @@
 package hexacloud.infra.server;
 
+import java.io.IOException;
+import java.io.PrintWriter;
+import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.function.BiConsumer;
+
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.io.PrintWriter;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.BiConsumer;
-import java.util.stream.Collectors;
-
 import hexacloud.core.cluster.Cluster;
 import hexacloud.core.cluster.ClusterRegistry;
-import hexacloud.core.model.NodeStatus;
-import hexacloud.core.model.ServerNode;
 import hexacloud.core.server.ServerTransport;
 import hexacloud.core.server.filter.HttpFilter;
 import hexacloud.core.server.filter.HttpFilterChainImpl;
@@ -29,8 +21,10 @@ import hexacloud.core.server.filter.Order;
 import hexacloud.core.server.filter.builtin.IpRestrictionFilter;
 import hexacloud.core.server.filter.builtin.RateLimitFilter;
 import hexacloud.core.server.filter.builtin.TokenAuthFilter;
+import hexacloud.core.server.filter.builtin.CorsFilter;
 import hexacloud.core.server.route.RouteRegistry;
-import hexacloud.core.server.route.RouteRule;
+import hexacloud.core.server.route.RouteResolution;
+import hexacloud.core.server.route.PathResolver;
 import hexacloud.core.utils.common.DebugUtils;
 import hexacloud.core.utils.concurrent.ThreadManager;
 import hexacloud.infra.server.filter.HttpRequestImpl;
@@ -45,31 +39,31 @@ public class HttpTransport implements ServerTransport {
 
     private HttpServer server;
     private boolean running = false;
-    private final ConcurrentHashMap<String, AtomicInteger> roundRobinIndices = new ConcurrentHashMap<>();
-    private static final java.util.concurrent.ConcurrentLinkedQueue<byte[]> BUFFER_POOL = new java.util.concurrent.ConcurrentLinkedQueue<>();
-    private final ConcurrentHashMap<String, RouteHandlerInfo> routeCache = new ConcurrentHashMap<>();
-    private final java.net.http.HttpClient httpClient = java.net.http.HttpClient.newBuilder()
-            .version(java.net.http.HttpClient.Version.HTTP_2)
-            .connectTimeout(java.time.Duration.ofMillis(5000))
-            .executor(ThreadManager.newVirtualThreadPool())
-            .build();
+    private final HttpErrorHandler errorHandler = new DefaultHttpErrorHandler();
+    private final ReverseProxyService reverseProxyService = new ReverseProxyService(new hexacloud.core.utils.network.JdkHttpProxyClient(), errorHandler);
 
     private hexacloud.core.server.PerformanceProfile performanceProfile = hexacloud.core.server.PerformanceProfile.STANDARD;
     private final List<HttpFilter> activeFilters = new CopyOnWriteArrayList<>();
     private hexacloud.core.ports.SslContextPort sslContextPort;
 
-    private void rebuildFilters(Cluster cluster, List<HttpFilter> customFilters) {
+    private void rebuildFilters(List<Cluster> clusters, List<HttpFilter> customFilters) {
         activeFilters.clear();
-        if (cluster != null) {
-            String allowedIps = cluster.getAllowedIps();
-            if (allowedIps != null && !allowedIps.trim().isEmpty()) {
-                activeFilters.add(new IpRestrictionFilter(cluster));
-            }
-            if (cluster.getRateLimitRequests() > 0 && cluster.getRateLimitDurationSeconds() > 0) {
-                activeFilters.add(new RateLimitFilter(cluster));
-            }
-            if (cluster.isRequireToken()) {
-                activeFilters.add(new TokenAuthFilter(cluster));
+        
+        // CORS filter is always the first filter in the chain
+        activeFilters.add(new CorsFilter());
+
+        if (clusters != null) {
+            for (Cluster cluster : clusters) {
+                String allowedIps = cluster.getAllowedIps();
+                if (allowedIps != null && !allowedIps.trim().isEmpty()) {
+                    activeFilters.add(new IpRestrictionFilter(cluster));
+                }
+                if (cluster.getRateLimitRequests() > 0 && cluster.getRateLimitDurationSeconds() > 0) {
+                    activeFilters.add(new RateLimitFilter(cluster));
+                }
+                if (cluster.isRequireToken()) {
+                    activeFilters.add(new TokenAuthFilter(cluster));
+                }
             }
         }
         activeFilters.addAll(customFilters);
@@ -94,10 +88,10 @@ public class HttpTransport implements ServerTransport {
     }
 
     @Override
-    public void listen(int port, RouteRegistry registry, Cluster cluster, List<HttpFilter> customFilters) {
+    public void listen(int port, RouteRegistry registry, List<Cluster> clusters, List<HttpFilter> customFilters) {
         try {
-            rebuildFilters(cluster, customFilters);
-            DebugUtils.log("HTTP Transport (JDK) starting on port " + port + " with profile: " + performanceProfile);
+            rebuildFilters(clusters, customFilters);
+            DebugUtils.info("HTTP Transport (JDK) starting on port " + port + " with profile: " + performanceProfile);
             if (sslContextPort != null && sslContextPort.isSslEnabled()) {
                 com.sun.net.httpserver.HttpsServer httpsServer = com.sun.net.httpserver.HttpsServer.create(
                     new java.net.InetSocketAddress(port), 2048
@@ -122,41 +116,18 @@ public class HttpTransport implements ServerTransport {
                     }
 
                     try {
-                        String fastPath = exchange.getRequestURI().getPath();
-                        String fastMatchingPath = fastPath.startsWith("/v1/") ? fastPath.substring(3) : (fastPath.equals("/v1") ? "/" : fastPath);
-                        
-                        RouteHandlerInfo fastRouteInfo = null;
-                        boolean isProxy = false;
+                        String path = exchange.getRequestURI().getPath();
+                        String matchingPath = path.startsWith("/v1/") ? path.substring(3) : (path.equals("/v1") ? "/" : path);
 
-                        if (fastMatchingPath.startsWith("/clusters/")) {
-                            isProxy = true;
-                        } else if (registry.getRouteRulesList() != null && !registry.getRouteRulesList().isEmpty()) {
-                            String requestHost = exchange.getRequestHeaders().getFirst("Host");
-                            RouteRule matchedRule = null;
-                            List<RouteRule> rules = registry.getRouteRulesList();
-                            if (rules != null) {
-                                for (RouteRule rule : rules) {
-                                    if (rule.matches(requestHost, fastMatchingPath)) {
-                                        matchedRule = rule;
-                                        break;
-                                    }
-                                }
-                            }
-                            isProxy = (matchedRule != null);
-                        }
- 
-                        // Fast-path for direct custom routes when no filters are active
-                        if (!isProxy && activeFilters.isEmpty()) {
-                            if (fastRouteInfo == null) {
-                                fastRouteInfo = routeCache.computeIfAbsent(fastMatchingPath, path -> {
-                                    String routeName = toRouteName(path);
-                                    BiConsumer<String, PrintWriter> handler = registry.getRoutes().get(routeName);
-                                    return new RouteHandlerInfo(handler, routeName);
-                                });
-                            }
- 
-                            if (fastRouteInfo.handler != null) {
-                                if (fastRouteInfo.routeName.equals("GET_NODES_JSON")) {
+                        RouteResolution fastResolution = PathResolver.resolve(matchingPath, exchange.getRequestHeaders().getFirst("Host"), registry);
+                        boolean canUseFastPath = fastResolution.isLocal() 
+                                && registry.isRouteFastPath(fastResolution.localRouteName())
+                                && (activeFilters.isEmpty() || (activeFilters.size() == 1 && activeFilters.get(0) instanceof CorsFilter));
+
+                        if (canUseFastPath) {
+                            BiConsumer<String, PrintWriter> handler = registry.getRoutes().get(fastResolution.localRouteName());
+                            if (handler != null) {
+                                if (fastResolution.localRouteName().equals("/V1/GET_NODES_JSON")) {
                                     exchange.getResponseHeaders().set("Content-Type", "application/json");
                                 } else {
                                     exchange.getResponseHeaders().set("Content-Type", "text/plain");
@@ -165,325 +136,103 @@ public class HttpTransport implements ServerTransport {
                                 try (PrintWriter out = new PrintWriter(new java.io.BufferedWriter(new java.io.OutputStreamWriter(exchange.getResponseBody(), java.nio.charset.StandardCharsets.UTF_8)))) {
                                     String query = exchange.getRequestURI().getQuery();
                                     String args = query != null ? query : "";
-                                    fastRouteInfo.handler.accept(args, out);
+                                    handler.accept(args, out);
                                 }
                                 return;
                             }
                         }
-
-                        // 1. Instantiate Wrappers
                         HttpRequestImpl req = new HttpRequestImpl(exchange);
                         HttpResponseImpl res = new HttpResponseImpl(exchange);
 
-                        // 3. Final Route execution handler
+                        RouteResolution resolution = PathResolver.resolve(req.getPath(), req.getHeader("Host"), registry);
+
+                        // Inline default CorsFilter optimization
+                        if (activeFilters.size() == 1 && activeFilters.get(0) instanceof CorsFilter) {
+                            res.setHeader("Access-Control-Allow-Origin", "*");
+                            res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS, PUT, DELETE");
+                            res.setHeader("Access-Control-Allow-Headers", "X-Cluster-Token, Content-Type, Authorization");
+
+                            if ("OPTIONS".equalsIgnoreCase(req.getMethod())) {
+                                res.setStatus(204);
+                                return;
+                            }
+
+                            executeRoute(req, res, resolution, registry);
+                            return;
+                        }
+
                         BiConsumer<HttpRequest, HttpResponse> routeHandler = (r, s) -> {
                             try {
-                                String rawPath = r.getPath();
-                                String matchingPath = rawPath;
-                                if (matchingPath.startsWith("/v1/")) {
-                                    matchingPath = matchingPath.substring(3);
-                                } else if (matchingPath.equals("/v1")) {
-                                    matchingPath = "/";
-                                }
-
-                                String targetClusterName = null;
-                                String clusterSubpath = null;
-                                boolean matchedRouteRule = false;
-
-                                if (matchingPath.startsWith("/clusters/")) {
-                                    String pathWithoutClusters = matchingPath.substring("/clusters/".length());
-                                    int slashIdx = pathWithoutClusters.indexOf('/');
-                                    if (slashIdx != -1) {
-                                        targetClusterName = pathWithoutClusters.substring(0, slashIdx);
-                                        clusterSubpath = pathWithoutClusters.substring(slashIdx);
-                                    } else {
-                                        targetClusterName = pathWithoutClusters;
-                                        clusterSubpath = "/";
-                                    }
-                                } else {
-                                    String routeName = toRouteName(matchingPath);
-                                    if (!registry.getRoutes().containsKey(routeName)) {
-                                        String requestHost = r.getHeader("Host");
-                                        RouteRule matchedRule = null;
-                                        List<RouteRule> rules = registry.getRouteRulesList();
-                                        if (rules != null) {
-                                            for (RouteRule rule : rules) {
-                                                if (rule.matches(requestHost, matchingPath)) {
-                                                    matchedRule = rule;
-                                                    break;
-                                                }
-                                            }
-                                        }
-                                        if (matchedRule != null) {
-                                            targetClusterName = matchedRule.getClusterName();
-                                            clusterSubpath = matchedRule.rewritePath(matchingPath);
-                                            matchedRouteRule = true;
-                                        }
-                                    }
-                                }
-
-                                if (targetClusterName != null) {
-                                    Cluster targetCluster = ClusterRegistry.getInstance().getCluster(targetClusterName);
-                                    if (targetCluster == null) {
-                                        s.setStatus(404);
-                                        try (PrintWriter out = s.getWriter()) {
-                                            out.print("404 Not Found - Unknown Cluster: " + targetClusterName);
-                                        }
-                                        return;
-                                    }
-
-                                    RouteRegistry targetRegistry = targetCluster.getRouteRegistry();
-                                    String routeName = clusterSubpath.length() > 1 ? clusterSubpath.substring(1).toUpperCase() : "";
-
-                                    // Check built-in cluster management routes
-                                    BiConsumer<String, PrintWriter> handler = targetRegistry.getRoutes().get(routeName);
-                                    if (handler != null) {
-                                        if (routeName.equals("GET_NODES_JSON")) {
-                                            s.setContentType("application/json");
-                                        } else {
-                                            s.setContentType("text/plain");
-                                        }
-                                        if (!s.isCommitted()) {
-                                            s.setStatus(200);
-                                        }
-                                        try (PrintWriter out = s.getWriter()) {
-                                            String query = r.getQuery();
-                                            String args = query != null ? query : "";
-                                            handler.accept(args, out);
-                                        }
-                                        return;
-                                    }
-
-                                    // Layer 7 Reverse Proxy Load Balancing
-                                    if (!matchedRouteRule && targetCluster.getRoutingMode() == Cluster.RoutingMode.TELEMETRY_ONLY) {
-                                        s.setStatus(403);
-                                        try (PrintWriter out = s.getWriter()) {
-                                            out.print("403 Forbidden - Load balancing is disabled for cluster: " + targetClusterName);
-                                        }
-                                        return;
-                                    }
-
-                                    List<ServerNode> activeNodes = targetCluster.getCluster().stream()
-                                            .filter(n -> n != null && n.status() == NodeStatus.ONLINE && !n.telemetryOnly())
-                                            .collect(Collectors.toList());
-
-                                    if (activeNodes.isEmpty()) {
-                                        s.setStatus(503);
-                                        try (PrintWriter out = s.getWriter()) {
-                                            out.print("503 Service Unavailable - No active nodes in cluster: " + targetClusterName);
-                                        }
-                                        return;
-                                    }
-
-                                    // Thread-safe Round-Robin selection
-                                    AtomicInteger rrIdx = roundRobinIndices.computeIfAbsent(targetClusterName, k -> new AtomicInteger(0));
-                                    int selectedIndex = (rrIdx.getAndIncrement() & Integer.MAX_VALUE) % activeNodes.size();
-                                    ServerNode targetNode = activeNodes.get(selectedIndex);
-
-                                    // Forward HTTP request to backend node
-                                    String targetUrlStr = targetNode.getFullHost() + clusterSubpath;
-                                    String query = r.getQuery();
-                                    if (query != null && !query.isEmpty()) {
-                                        targetUrlStr += "?" + query;
-                                    }
-
-                                    long startTime = System.currentTimeMillis();
-                                    java.net.http.HttpRequest.Builder reqBuilder = java.net.http.HttpRequest.newBuilder()
-                                            .uri(java.net.URI.create(targetUrlStr));
-
-                                    int timeout = targetCluster.getTimeoutMs() > 0 ? targetCluster.getTimeoutMs() : 5000;
-                                    reqBuilder.timeout(java.time.Duration.ofMillis(timeout));
-
-                                    // Copy request headers
-                                    Map<String, List<String>> reqHeaders = r.getHeaders();
-                                    if (reqHeaders != null) {
-                                        for (Map.Entry<String, List<String>> entry : reqHeaders.entrySet()) {
-                                            String hName = entry.getKey();
-                                            if (hName == null || hName.equalsIgnoreCase("Host") || hName.equalsIgnoreCase("Content-Length") || hName.equalsIgnoreCase("Connection") || hName.equalsIgnoreCase("Upgrade")) {
-                                                continue;
-                                            }
-                                            for (String val : entry.getValue()) {
-                                                reqBuilder.header(hName, val);
-                                            }
-                                        }
-                                    }
-
-                                    // Forward request body if present
-                                    String method = r.getMethod();
-                                    java.net.http.HttpRequest.BodyPublisher bodyPublisher;
-                                    boolean hasBody = "POST".equalsIgnoreCase(method) || "PUT".equalsIgnoreCase(method) || "PATCH".equalsIgnoreCase(method);
-                                    if (hasBody) {
-                                        bodyPublisher = java.net.http.HttpRequest.BodyPublishers.ofInputStream(() -> exchange.getRequestBody());
-                                    } else {
-                                        bodyPublisher = java.net.http.HttpRequest.BodyPublishers.noBody();
-                                    }
-                                    reqBuilder.method(method, bodyPublisher);
-
-                                    java.net.http.HttpRequest proxyRequest = reqBuilder.build();
-
-                                    int respCode = 502;
-                                    java.net.http.HttpResponse<InputStream> proxyResponse = null;
-                                    try {
-                                        proxyResponse = httpClient.send(proxyRequest, java.net.http.HttpResponse.BodyHandlers.ofInputStream());
-                                        respCode = proxyResponse.statusCode();
-                                    } catch (Exception ex) {
-                                        respCode = 502;
-                                    }
-
-                                    long latencyMs = System.currentTimeMillis() - startTime;
-
-                                    // Passive Telemetry extraction
-                                    Double cpuVal = null;
-                                    Double ramVal = null;
-                                    if (proxyResponse != null) {
-                                        cpuVal = parseHeaderDouble(proxyResponse.headers(), "X-Telemetry-CPU", "X-Node-CPU");
-                                        ramVal = parseHeaderDouble(proxyResponse.headers(), "X-Telemetry-RAM", "X-Node-RAM");
-                                    }
-
-                                    targetCluster.updateTelemetryServer(targetNode.host(), targetNode.port(), cpuVal, ramVal, null, (int) latencyMs, null);
-                                    if (cpuVal != null) targetNode.setCpuUsage(cpuVal);
-                                    if (ramVal != null) targetNode.setRamUsage(ramVal);
-                                    targetNode.setLatencyMs((int) latencyMs);
-
-                                    // Copy response headers to client response
-                                    if (proxyResponse != null) {
-                                        for (Map.Entry<String, List<String>> entry : proxyResponse.headers().map().entrySet()) {
-                                            String hName = entry.getKey();
-                                            if (hName == null || hName.equalsIgnoreCase("Transfer-Encoding") || hName.equalsIgnoreCase("Content-Length") || hName.equalsIgnoreCase("Connection")) {
-                                                continue;
-                                            }
-                                            for (String val : entry.getValue()) {
-                                                exchange.getResponseHeaders().add(hName, val);
-                                            }
-                                        }
-                                    }
-
-                                    // Send response status and body
-                                    if (proxyResponse != null) {
-                                        long contentLength = proxyResponse.headers().firstValueAsLong("Content-Length").orElse(-1L);
-                                        if (respCode == 204 || respCode == 304 || contentLength == 0) {
-                                            exchange.sendResponseHeaders(respCode, -1);
-                                        } else {
-                                            // Chunked streaming for body
-                                            exchange.sendResponseHeaders(respCode, 0);
-                                            byte[] buf = BUFFER_POOL.poll();
-                                            if (buf == null) {
-                                                buf = new byte[8192];
-                                            }
-                                            try (InputStream in = proxyResponse.body();
-                                                 OutputStream os = exchange.getResponseBody()) {
-                                                int len;
-                                                while ((len = in.read(buf)) != -1) {
-                                                    os.write(buf, 0, len);
-                                                }
-                                                os.flush();
-                                            } finally {
-                                                BUFFER_POOL.offer(buf);
-                                            }
-                                        }
-                                    } else {
-                                        if (respCode == 502) {
-                                            byte[] respBytes = "502 Bad Gateway - Connection failed".getBytes(java.nio.charset.StandardCharsets.UTF_8);
-                                            exchange.getResponseHeaders().set("Content-Type", "text/plain");
-                                            exchange.sendResponseHeaders(502, respBytes.length);
-                                            try (OutputStream os = exchange.getResponseBody()) {
-                                                os.write(respBytes);
-                                                os.flush();
-                                            }
-                                        } else {
-                                            exchange.sendResponseHeaders(respCode, -1);
-                                        }
-                                    }
-
-                                } else {
-                                    final String finalLookupPath = matchingPath;
-                                    RouteHandlerInfo routeInfo = routeCache.computeIfAbsent(finalLookupPath, path -> {
-                                        String routeName = toRouteName(path);
-                                        BiConsumer<String, PrintWriter> handler = registry.getRoutes().get(routeName);
-                                        return new RouteHandlerInfo(handler, routeName);
-                                    });
-
-                                    if (routeInfo.handler != null) {
-                                        if (routeInfo.routeName.equals("GET_NODES_JSON")) {
-                                            s.setContentType("application/json");
-                                        } else {
-                                            s.setContentType("text/plain");
-                                        }
-                                        if (!s.isCommitted()) {
-                                            s.setStatus(200);
-                                        }
-                                        try (PrintWriter out = s.getWriter()) {
-                                            String query = r.getQuery();
-                                            String args = query != null ? query : "";
-                                            routeInfo.handler.accept(args, out);
-                                        }
-                                    } else {
-                                        s.setStatus(404);
-                                        try (PrintWriter out = s.getWriter()) {
-                                            out.print("404 Not Found - Unknown Route: " + matchingPath);
-                                        }
-                                    }
-                                }
+                                executeRoute(r, s, resolution, registry);
                             } catch (Exception e) {
                                 throw new RuntimeException(e);
                             }
                         };
 
-                        // 4. Run chain
-                        if (!activeFilters.isEmpty()) {
-                            HttpFilterChainImpl chain = new HttpFilterChainImpl(activeFilters, routeHandler);
-                            chain.doFilter(req, res);
-                        } else {
-                            routeHandler.accept(req, res);
-                        }
+                        HttpFilterChainImpl chain = new HttpFilterChainImpl(activeFilters, routeHandler);
+                        chain.doFilter(req, res);
 
                     } catch (Exception e) {
                         DebugUtils.error("HttpTransport: Exception caught in filter chain pipeline: " + e.getMessage(), e);
-                        if (!exchange.getResponseHeaders().containsKey("Content-Type")) {
-                            exchange.getResponseHeaders().set("Content-Type", "text/plain");
-                        }
                         try {
-                            exchange.sendResponseHeaders(500, 0);
-                            try (OutputStream os = exchange.getResponseBody();
-                                 PrintWriter out = new PrintWriter(os, true)) {
-                                out.println("500 Internal Server Error - Execution failure: " + e.getMessage());
-                            }
+                            HttpResponseImpl res = new HttpResponseImpl(exchange);
+                            errorHandler.handleException(res, e);
                         } catch (Exception ignored) {}
                     }
                 }
             });
-            
-            new Thread(() -> {
-                server.start();
-                running = true;
-                DebugUtils.info("HTTP Transport successfully bound and listening on port " + port);
-            }, "HttpServer-Listener-" + port).start();
-            
-        } catch(IOException e) {
-            DebugUtils.error("HTTP Transport failed to start on port " + port, e);
+
+            server.start();
+            running = true;
+        } catch (Exception e) {
+            DebugUtils.error("HttpTransport: Failed to start HTTP server on port " + port, e);
+            throw new RuntimeException("HttpTransport start failed", e);
         }
     }
 
-    private Double parseHeaderDouble(java.net.http.HttpHeaders headers, String... headerNames) {
-        for (String hName : headerNames) {
-            java.util.Optional<String> valOpt = headers.firstValue(hName);
-            if (valOpt.isPresent()) {
-                String val = valOpt.get();
-                if (!val.trim().isEmpty()) {
-                    try {
-                        return Double.parseDouble(val.replace("%", "").trim());
-                    } catch (NumberFormatException ignored) {}
-                }
+    private void executeRoute(HttpRequest r, HttpResponse s, RouteResolution resolution, RouteRegistry registry) throws Exception {
+        if (resolution.isProxy()) {
+            Cluster targetCluster = ClusterRegistry.getInstance().getCluster(resolution.targetClusterName());
+            if (targetCluster == null) {
+                errorHandler.handleStatus(s, 404, "Unknown Cluster: " + resolution.targetClusterName());
+                return;
             }
-        }
-        return null;
-    }
 
-    private static String toRouteName(String path) {
-        if (path == null || path.equals("/") || path.isEmpty()) {
-            return "/";
+            // Check if there is an internal cluster administration route
+            RouteRegistry clusterRegistry = targetCluster.getRouteRegistry();
+            String clusterRouteKey = resolution.resolveTargetRouteKey();
+            if (clusterRegistry != null && clusterRouteKey != null && clusterRegistry.getRoutes().containsKey(clusterRouteKey)) {
+                BiConsumer<String, PrintWriter> handler = clusterRegistry.getRoutes().get(clusterRouteKey);
+                if (clusterRouteKey.equals("/V1/GET_NODES_JSON")) {
+                    s.setContentType("application/json");
+                } else {
+                    s.setContentType("text/plain");
+                }
+                try (PrintWriter out = s.getWriter()) {
+                    String query = r.getQuery();
+                    String args = query != null ? query : "";
+                    handler.accept(args, out);
+                }
+                return;
+            }
+
+            reverseProxyService.proxyRequest(r, s, targetCluster, resolution.targetSubpath(), targetCluster.getTimeoutMs(), resolution.matchedRouteRule());
+
+        } else if (resolution.isLocal()) {
+            BiConsumer<String, PrintWriter> handler = registry.getRoutes().get(resolution.localRouteName());
+            if (resolution.localRouteName().equals("/V1/GET_NODES_JSON")) {
+                s.setContentType("application/json");
+            } else {
+                s.setContentType("text/plain");
+            }
+            try (PrintWriter out = s.getWriter()) {
+                String query = r.getQuery();
+                String args = query != null ? query : "";
+                handler.accept(args, out);
+            }
+        } else {
+            errorHandler.handleStatus(s, 404, "Unknown Route: " + r.getPath());
         }
-        return path.startsWith("/") ? path.substring(1).toUpperCase() : path.toUpperCase();
     }
 
     @Override
@@ -491,22 +240,12 @@ public class HttpTransport implements ServerTransport {
         if(server != null) {
             server.stop(0);
             running = false;
-            DebugUtils.log("HTTP Transport stopped.");
+            DebugUtils.info("HTTP Transport stopped.");
         }
     }
 
     @Override
     public boolean isRunning() {
         return running;
-    }
-
-    private static class RouteHandlerInfo {
-        final BiConsumer<String, PrintWriter> handler;
-        final String routeName;
-
-        RouteHandlerInfo(BiConsumer<String, PrintWriter> handler, String routeName) {
-            this.handler = handler;
-            this.routeName = routeName;
-        }
     }
 }
