@@ -27,4 +27,27 @@ public class PathResolverTest {
         assertEquals("/get_nodes", res.targetSubpath());
         assertEquals("/V1/GET_NODES", res.resolveTargetRouteKey());
     }
+
+    @Test
+    public void testFastPathRouteRegistration() {
+        RouteRegistry registry = new RouteRegistry();
+        registry.registerController(new RouteController() {
+            @RouteMapping(value = "/hello", fastPath = true)
+            public void test(String args, java.io.PrintWriter out) {}
+        });
+
+        RouteResolution res = PathResolver.resolve("/hello", "localhost", registry);
+        assertTrue(res.isLocal());
+        assertTrue(registry.isRouteFastPath(res.localRouteName()));
+
+        RouteRegistry otherRegistry = new RouteRegistry();
+        otherRegistry.registerController(new RouteController() {
+            @RouteMapping(value = "/slow")
+            public void test(String args, java.io.PrintWriter out) {}
+        });
+
+        RouteResolution slowRes = PathResolver.resolve("/slow", "localhost", otherRegistry);
+        assertTrue(slowRes.isLocal());
+        assertFalse(otherRegistry.isRouteFastPath(slowRes.localRouteName()));
+    }
 }

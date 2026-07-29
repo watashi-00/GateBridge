@@ -22,6 +22,7 @@ public class RouteRegistry {
     }
 
     private final java.util.Set<String> publicRoutes = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    private final java.util.Set<String> fastPathRoutes = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private final java.util.List<RouteRule> routeRules = new java.util.concurrent.CopyOnWriteArrayList<>();
 
     public void addRouteRule(RouteRule rule) {
@@ -43,6 +44,11 @@ public class RouteRegistry {
         return publicRoutes.contains(routeName.toUpperCase());
     }
 
+    public boolean isRouteFastPath(String routeName) {
+        if (routeName == null) return false;
+        return fastPathRoutes.contains(routeName.toUpperCase());
+    }
+
     public void registerController(RouteController controller) {
         if(controller == null) return;
         
@@ -53,6 +59,9 @@ public class RouteRegistry {
                 String command = mapping.value().toUpperCase();
                 if (mapping.isPublic()) {
                     publicRoutes.add(command);
+                }
+                if (mapping.fastPath()) {
+                    fastPathRoutes.add(command);
                 }
                 
                 Class<?>[] paramTypes = method.getParameterTypes();
