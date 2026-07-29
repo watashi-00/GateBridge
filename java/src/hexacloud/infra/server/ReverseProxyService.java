@@ -19,6 +19,7 @@ import java.util.Map;
 public class ReverseProxyService {
     private final HttpProxyClient proxyClient;
     private final HttpErrorHandler errorHandler;
+    private static final java.util.concurrent.ConcurrentLinkedQueue<byte[]> BUFFER_POOL = new java.util.concurrent.ConcurrentLinkedQueue<>();
 
     public ReverseProxyService(HttpProxyClient proxyClient, HttpErrorHandler errorHandler) {
         this.proxyClient = proxyClient != null ? proxyClient : new JdkHttpProxyClient();
@@ -102,12 +103,19 @@ public class ReverseProxyService {
             }
 
             try (InputStream in = response.bodyStream(); OutputStream out = res.getOutputStream()) {
-                byte[] buffer = new byte[8192];
-                int bytesRead;
-                while ((bytesRead = in.read(buffer)) != -1) {
-                    out.write(buffer, 0, bytesRead);
+                byte[] buffer = BUFFER_POOL.poll();
+                if (buffer == null) {
+                    buffer = new byte[8192];
                 }
-                out.flush();
+                try {
+                    int bytesRead;
+                    while ((bytesRead = in.read(buffer)) != -1) {
+                        out.write(buffer, 0, bytesRead);
+                    }
+                    out.flush();
+                } finally {
+                    BUFFER_POOL.offer(buffer);
+                }
             }
         } catch (Exception e) {
             DebugUtils.error("ReverseProxyService: Proxy request failed to " + targetUrl, e);

@@ -105,7 +105,42 @@ public class HttpTransport implements ServerTransport {
             server.createContext("/", new HttpHandler() {
                 @Override
                 public void handle(HttpExchange exchange) throws IOException {
+                    // CORS Configuration
+                    exchange.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
+                    exchange.getResponseHeaders().set("Access-Control-Allow-Methods", "GET, POST, OPTIONS, PUT, DELETE");
+                    exchange.getResponseHeaders().set("Access-Control-Allow-Headers", "X-Cluster-Token, Content-Type, Authorization");
+
+                    if ("OPTIONS".equals(exchange.getRequestMethod())) {
+                        exchange.sendResponseHeaders(204, -1);
+                        return;
+                    }
+
                     try {
+                        String path = exchange.getRequestURI().getPath();
+                        String matchingPath = path.startsWith("/v1/") ? path.substring(3) : (path.equals("/v1") ? "/" : path);
+
+                        RouteResolution fastResolution = PathResolver.resolve(matchingPath, exchange.getRequestHeaders().getFirst("Host"), registry);
+                        boolean canUseFastPath = fastResolution.isLocal() 
+                                && (activeFilters.isEmpty() || (activeFilters.size() == 1 && activeFilters.get(0) instanceof CorsFilter));
+
+                        if (canUseFastPath) {
+                            BiConsumer<String, PrintWriter> handler = registry.getRoutes().get(fastResolution.localRouteName());
+                            if (handler != null) {
+                                if (fastResolution.localRouteName().equals("/V1/GET_NODES_JSON")) {
+                                    exchange.getResponseHeaders().set("Content-Type", "application/json");
+                                } else {
+                                    exchange.getResponseHeaders().set("Content-Type", "text/plain");
+                                }
+                                exchange.sendResponseHeaders(200, 0);
+                                try (PrintWriter out = new PrintWriter(new java.io.BufferedWriter(new java.io.OutputStreamWriter(exchange.getResponseBody(), java.nio.charset.StandardCharsets.UTF_8)))) {
+                                    String query = exchange.getRequestURI().getQuery();
+                                    String args = query != null ? query : "";
+                                    handler.accept(args, out);
+                                }
+                                return;
+                            }
+                        }
+
                         HttpRequestImpl req = new HttpRequestImpl(exchange);
                         HttpResponseImpl res = new HttpResponseImpl(exchange);
 
