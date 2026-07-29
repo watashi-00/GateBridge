@@ -45,4 +45,12 @@ public class HttpResponseImpl implements HttpResponse {
     public boolean isCommitted() {
         return committed;
     }
+
+    @Override
+    public java.io.OutputStream getOutputStream() throws Exception {
+        if (!committed) {
+            setStatus(200);
+        }
+        return exchange.getResponseBody();
+    }
 }

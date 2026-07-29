@@ -14,4 +14,5 @@ public interface HttpRequest {
     String getClientIp();
     void setAttribute(String key, Object value);
     Object getAttribute(String key);
+    java.io.InputStream getBody() throws Exception;
 }

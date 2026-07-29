@@ -29,6 +29,7 @@ public class Cluster {
     private final ClusterSecurityManager securityManager;
     private final RouteRegistry routeRegistry;
     private final ReentrantLock lock = new ReentrantLock();
+    private final java.util.concurrent.atomic.AtomicInteger roundRobinIdx = new java.util.concurrent.atomic.AtomicInteger(0);
 
     private String clusterName = ClusterConfig.DEFAULT_CLUSTER_NAME;
     private String clusterUri = ClusterConfig.DEFAULT_CLUSTER_URI;
@@ -239,6 +240,27 @@ public class Cluster {
         lock.lock();
         try {
             return new ArrayList<>(cluster.values());
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    public ServerNode selectNode() {
+        lock.lock();
+        try {
+            List<ServerNode> activeNodes = new ArrayList<>();
+            for (ServerNode n : cluster.values()) {
+                if (n != null && n.status() == NodeStatus.ONLINE && !n.telemetryOnly()
+                        && (n.routingProtocol() == hexacloud.core.model.RoutingProtocol.HTTP
+                         || n.routingProtocol() == hexacloud.core.model.RoutingProtocol.GRPC)) {
+                    activeNodes.add(n);
+                }
+            }
+            if (activeNodes.isEmpty()) {
+                return null;
+            }
+            int selectedIndex = (roundRobinIdx.getAndIncrement() & Integer.MAX_VALUE) % activeNodes.size();
+            return activeNodes.get(selectedIndex);
         } finally {
             lock.unlock();
         }

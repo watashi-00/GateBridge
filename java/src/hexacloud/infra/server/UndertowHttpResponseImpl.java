@@ -50,6 +50,17 @@ public class UndertowHttpResponseImpl implements HttpResponse {
     public boolean isCommitted() {
         return exchange.isResponseStarted();
     }
+
+    @Override
+    public java.io.OutputStream getOutputStream() throws Exception {
+        if (!statusSet && !exchange.isResponseStarted()) {
+            exchange.setStatusCode(200);
+        }
+        if (!exchange.isBlocking()) {
+            exchange.startBlocking();
+        }
+        return exchange.getOutputStream();
+    }
     
     public void flushBuffer() {
         if (writer != null) {
