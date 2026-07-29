@@ -243,8 +243,6 @@ public class HttpTransport implements ServerTransport {
                                         }
                                     }
                                 }
-                                //debug...
-                                System.out.println(targetClusterName);
                                 if (targetClusterName != null) {
                                     Cluster targetCluster = ClusterRegistry.getInstance().getCluster(targetClusterName);
                                     if (targetCluster == null) {
@@ -287,7 +285,6 @@ public class HttpTransport implements ServerTransport {
                                     }
 
                                     List<ServerNode> activeNodes = targetCluster.getCluster().stream()
-                                            .peek(node -> System.out.println("Node: " + node))
                                             .filter(n -> n != null && n.status() == NodeStatus.ONLINE && !n.telemetryOnly()
                                                       && (n.routingProtocol() == hexacloud.core.model.RoutingProtocol.HTTP
                                                        || n.routingProtocol() == hexacloud.core.model.RoutingProtocol.GRPC))

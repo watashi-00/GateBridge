@@ -81,7 +81,7 @@ public class ThreadPingScheduler {
             boolean statusChanged = node.status() != status;
             if (statusChanged) {
                 eventManager.dispatch(new NodeStatusChanged(node.getFullHost(), status, node.getId()));
-                System.out.println("Node " + node.getFullHost() + " " + node.getId());
+                DebugUtils.info("Node " + node.getFullHost() + " status updated to " + status + " (" + node.getId() + ")");
             }
             
             if (result.hasTelemetry()){
