@@ -19,7 +19,7 @@ public class ClusterController implements RouteController {
         this.clusterService = new ClusterService(cluster);
     }
 
-    @RouteMapping("GET_NODES")
+    @RouteMapping("/v1/get_nodes")
     public void getNodes(String args, PrintWriter out) {
         StringBuilder sb = new StringBuilder();
         for(ServerNode node : this.cluster.getCluster()) {
@@ -28,7 +28,7 @@ public class ClusterController implements RouteController {
         out.println(sb.toString());
     }
 
-    @RouteMapping("REGISTER")
+    @RouteMapping("/v1/register")
     public void register(String args, PrintWriter out) {
         try {
             int regPort = Integer.parseInt(args);
@@ -39,7 +39,7 @@ public class ClusterController implements RouteController {
         }
     }
 
-    @RouteMapping("TELEMETRY")
+    @RouteMapping("/v1/telemetry")
     public void telemetry(String args, PrintWriter out) {
         if (args == null || args.trim().isEmpty()) {
             out.println("ERROR: Missing arguments. Expected format: <host> <port> [key=value]... or host=...&port=...");
@@ -60,7 +60,7 @@ public class ClusterController implements RouteController {
         }
     }
 
-    @RouteMapping("DEREGISTER")
+    @RouteMapping("/v1/deregister")
     public void deregister(String args, PrintWriter out) {
         if (args == null || args.trim().isEmpty()) {
             out.println("ERROR: Missing host address.");
@@ -70,7 +70,7 @@ public class ClusterController implements RouteController {
         out.println("SUCCESS: Node " + args.trim() + " deregistered.");
     }
 
-    @RouteMapping("LIST_CLUSTERS")
+    @RouteMapping("/v1/list_clusters")
     public void listClusters(String args, PrintWriter out) {
         StringBuilder sb = new StringBuilder();
         for(Cluster c : ClusterRegistry.getInstance().getClusters()) {
@@ -79,7 +79,7 @@ public class ClusterController implements RouteController {
         out.println(sb.toString());
     }
 
-    @RouteMapping("CREATE_CLUSTER")
+    @RouteMapping("/v1/create_cluster")
     public void createCluster(String args, PrintWriter out) {
         if(args == null || args.trim().isEmpty()) {
             out.println("ERROR: Missing cluster name.");
@@ -90,7 +90,7 @@ public class ClusterController implements RouteController {
         out.println("SUCCESS: Cluster '" + clusterName + "' created.");
     }
 
-    @RouteMapping("GET_CLUSTER_CONFIG")
+    @RouteMapping("/v1/get_cluster_config")
     public void getClusterConfig(String args, PrintWriter out) {
         StringBuilder sb = new StringBuilder();
         sb.append("requireToken=").append(cluster.isRequireToken()).append(";");
@@ -101,7 +101,7 @@ public class ClusterController implements RouteController {
         out.println(sb.toString());
     }
 
-    @RouteMapping("GET_GLOBAL_CONFIG")
+    @RouteMapping("/v1/get_global_config")
     public void getGlobalConfig(String args, PrintWriter out) {
         StringBuilder sb = new StringBuilder();
         sb.append("maxClusterSize=").append(hexacloud.core.config.ClusterConfig.MAX_CLUSTER_SIZE).append(";");
@@ -111,13 +111,13 @@ public class ClusterController implements RouteController {
         out.println(sb.toString());
     }
 
-    @RouteMapping("SET_ALLOWED_IPS")
+    @RouteMapping("/v1/set_allowed_ips")
     public void setAllowedIps(String args, PrintWriter out) {
         cluster.setAllowedIps(args.trim());
         out.println("SUCCESS: Allowed IPs updated.");
     }
 
-    @RouteMapping("SET_TIMEOUT")
+    @RouteMapping("/v1/set_timeout")
     public void setTimeout(String args, PrintWriter out) {
         try {
             int timeout = Integer.parseInt(args.trim());
@@ -128,7 +128,7 @@ public class ClusterController implements RouteController {
         }
     }
 
-    @RouteMapping("SET_RATE_LIMIT")
+    @RouteMapping("/v1/set_rate_limit")
     public void setRateLimit(String args, PrintWriter out) {
         try {
             String[] parts = args.trim().split(" ");
@@ -145,7 +145,7 @@ public class ClusterController implements RouteController {
         }
     }
 
-    @RouteMapping("GET_NODES_JSON")
+    @RouteMapping("/v1/get_nodes_json")
     public void getNodesJson(String args, PrintWriter out) {
         String json = JsonSerializer.serialize(this.cluster.getCluster());
         out.println(json);

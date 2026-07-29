@@ -184,13 +184,13 @@ public class MinimalApplication {
 
     public static class DemoRouteController implements RouteController {
 
-        @RouteMapping("HELLO")
+        @RouteMapping("/hello")
         public void handleHello(String args, PrintWriter out) {
             out.println("HELLO FROM MINIMAL APPLICATION ROUTE!");
             out.println("Arguments received: " + (args.isEmpty() ? "None" : args));
         }
 
-        @RouteMapping("SYSTEM_INFO")
+        @RouteMapping("/system_info")
         public void handleSystemInfo(String args, PrintWriter out) {
             out.println("GateBridge Framework Status: ACTIVE");
             out.println("Available Processors: " + Runtime.getRuntime().availableProcessors());
