@@ -31,26 +31,17 @@ public class LocalFilePersistenceAdapter implements ClusterPersistencePort {
 
     private String getStateDirectory() {
         String dir = System.getProperty("hexacloud.state.dir");
-        DebugUtils.info("Default state directory is " + dir);
         if (dir == null) {
             dir = System.getenv("HEXACLOUD_STATE_DIR");
         }
-        
-        DebugUtils.info("Directory is " + dir);
-
         if (dir == null || dir.trim().isEmpty()) {
             dir = ".state";
         }
-
-
-        DebugUtils.info("Directory is " + dir);
-
         File dirFile = new File(dir);
         if (!dirFile.exists()) {
             dirFile.mkdirs();
             DebugUtils.info("Created directory " + dirFile.getAbsolutePath());
         }
-
         return dir;
     }
 

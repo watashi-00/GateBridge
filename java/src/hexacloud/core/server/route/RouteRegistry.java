@@ -10,7 +10,17 @@ import hexacloud.core.utils.common.DebugUtils;
 
 public class RouteRegistry {
 
+    private final String name;
     private final Map<String, BiConsumer<String, PrintWriter>> routes = new HashMap<>();
+
+    public RouteRegistry() {
+        this("Global");
+    }
+
+    public RouteRegistry(String name) {
+        this.name = name;
+    }
+
     private final java.util.Set<String> publicRoutes = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private final java.util.List<RouteRule> routeRules = new java.util.concurrent.CopyOnWriteArrayList<>();
 
@@ -72,7 +82,7 @@ public class RouteRegistry {
                         };
                     }
                     routes.put(command, handler);
-                    DebugUtils.info("RouteScanner: Registered command '" + command + "' mapping to method " + clazz.getSimpleName() + "." + method.getName());
+                    DebugUtils.info("RouteScanner: [" + name + "] Registered command '" + command + "' mapping to method " + clazz.getSimpleName() + "." + method.getName());
                 } else {
                     DebugUtils.error("RouteScanner: Failed to register method " + clazz.getSimpleName() + "." + method.getName() + " -> Must accept parameters (String, PrintWriter)");
                 }

@@ -62,7 +62,7 @@ public class Cluster {
         this.clusterName = clusterName;
         this.eventManager = eventManager;
         this.securityManager = new ClusterSecurityManager(clusterName);
-        this.routeRegistry = new RouteRegistry();
+        this.routeRegistry = new RouteRegistry("Cluster:" + clusterName);
         this.routeRegistry.registerController(new ClusterController(this));
         ClusterRegistry.getInstance().registerCluster(this);
     }
